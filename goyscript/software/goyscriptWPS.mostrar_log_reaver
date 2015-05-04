@@ -1,0 +1,95 @@
+#!/bin/sh
+WRT=`ps | grep goyscriptWRT | grep -v grep`
+if [ "$WRT" = "" ] #si no se est.. usando goyscriptWRT
+then
+	PARAMETRO_PS="-A"
+	BINARY="--binary-files=text"
+else
+	PARAMETRO_PS=""
+	BINARY=""
+	trap control_c SIGINT
+fi
+PINS="./software/PINs.goy"
+WPS_TEMP="wps"
+SESIONES="$WPS_TEMP/sesiones"
+CLAVES="claves"
+ARCHIVO=`cat "$SESIONES/log_actual"`
+MAC3PARES=`cat "$SESIONES/log_actual" | awk -F '(' '{print $2}' | cut -c-8 | sed 's/-/:/g'`
+let CONT=1
+
+control_c()
+{
+killall -q reaver >/dev/null 2>&1
+}
+
+mostrar_log()
+{
+LINEA=`sed -n ${CONT}p "$SESIONES/$ARCHIVO.log"`
+while [ "$LINEA" != "" ]
+do
+	echo -e "$LINEA"
+	let CONT=$CONT+1
+	LINEA=`sed -n ${CONT}p "$SESIONES/$ARCHIVO.log"`
+done
+}
+
+comprobar_si_encontro_la_clave()
+{
+WPA=`cat "$SESIONES/$ARCHIVO.log" | grep "WPA PSK" | awk -F "'" '{print $2}'`
+if [ "$WPA" != "" ]
+then
+	PIN=`cat "$SESIONES/$ARCHIVO.log" | grep "WPS PIN" | awk -F "'" '{print $2}'`
+	echo "Pin WPS.....: '$PIN'" > "$CLAVES/$ARCHIVO.txt"
+	echo "Clave WPA...: '$WPA'" >> "$CLAVES/$ARCHIVO.txt"
+	echo "$MAC3PARES"-"$PIN" >> "$PINS"
+	sleep 2 #pequeña pausa para dar tiempo a generar el archivo con la contraseña
+	exit 0
+fi
+}
+
+#SI SE DETIENE EL SCRIPT CON CONTROL+C SE MATA REAVER
+control_c()
+{
+PID=`ps $PARAMETRO_PS | grep reaver | grep -v grep | sed -n 1p | awk '{print $1}'`
+while [ "$PID" != "" ]
+do
+	kill $PID >/dev/null 2>&1
+	PID=`ps $PARAMETRO_PS | grep reaver | grep -v grep | sed -n 1p | awk '{print $1}'`
+done
+}
+
+# PROGRAMA PRINCIPAL ########################
+
+clear
+INTERFAZ_GRAFICA=`ps $PARAMETRO_PS | grep goyscriptTTY | grep -v grep`
+if [ "$INTERFAZ_GRAFICA" = "" ]
+then
+	INTERFAZ_GRAFICA="SI"
+else
+	INTERFAZ_GRAFICA="NO"
+	trap control_c SIGINT
+fi
+REAVER_FUNCIONANDO=`ps $PARAMETRO_PS | grep reaver | grep -v grep`
+while [ "$REAVER_FUNCIONANDO" != "" ] && [ ! -e "$CLAVES/$ARCHIVO.txt" ]
+do
+	mostrar_log
+	comprobar_si_encontro_la_clave
+	if [ "$INTERFAZ_GRAFICA" = "SI" ]
+	then
+		sleep 1 #pequeña pausa para no consumir muchos recursos
+	fi
+	REAVER_FUNCIONANDO=`ps $PARAMETRO_PS | grep reaver | grep -v grep`
+	COMPLETADO=`cat "$SESIONES/$ARCHIVO.log" | grep $BINARY "%" | tail -n 1 | awk -F '%' '{print $1}' | sed 's/\[+\]//g' | sed 's/ //g' | sed 's/\./,/g'`
+	CONCOLOR=`echo "$COMPLETADO" | grep "m"`
+	if [ "$CONCOLOR" != "" ] #ELIMINA EL FORMATO DE COLOR AL PORCENTAJE SI LO TIENE
+	then
+		COMPLETADO=`echo $COMPLETADO | awk -F "m" '{print $2}'`
+	fi
+	if [ "$COMPLETADO" = "99,99" ]
+	then
+		break
+	fi
+done
+mostrar_log
+comprobar_si_encontro_la_clave
+sleep 1

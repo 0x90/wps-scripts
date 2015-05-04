@@ -1,0 +1,38 @@
+#!/bin/sh
+grisC="\033[0;37m"
+blanco="\033[1;37m"
+VERSION=`cat VERSION`
+if [ "$1" == "--help" ] || [ "$1" == "--ayuda" ] || [ "$1" == "/?" ]
+then
+	echo -e $blanco
+	echo "GOYscriptTTY $VERSION by GOYfilms"
+	echo -e $grisC
+	echo -e $grisC"Ejecuta GOYscript desde una sola consola"
+	echo -e $grisC"sin hacer uso de la interfaz gráfica."
+	echo
+	echo "Modo de uso: $0 [interfaz] [opciones]"
+	echo
+	echo "OPCIONES:"
+	echo "    -l, -L :Usar la lista de redes detectadas la última vez"
+	echo "    -wep   :Buscar sólo redes con encriptación WEP"
+	echo "    -wpa   :Buscar sólo redes con encriptación WPA"
+	echo "    -wps   :Buscar sólo redes con WPS activado"
+	echo "    -dic   :Ejecuta goyscriptDIC en modo consola"
+	echo
+	echo "Ejemplos: $0"
+	echo "          $0 wlan1"
+	echo "          $0 wlan0 -l"
+	echo "          $0 -L"
+	echo "          $0 -wpa"
+	echo "          $0 wlan0 -wps"
+	echo "          $0 -dic"
+	echo -e "$grisC"
+	exit 1
+fi
+if [ "$1" = "-dic" ]
+then
+	PARAMETROS=`echo "$*" | sed 's/-dic //' | sed 's/-dic//'`
+	screen -c software/plantilla_screen -t "GOYscriptDIC" ./goyscriptDIC $PARAMETROS
+else
+	screen -c software/plantilla_screen -t "GOYscriptTTY" ./goyscript $*
+fi
