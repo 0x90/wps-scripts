@@ -1,0 +1,566 @@
+#!/bin/sh
+#SCRIPT QUE MUESTRA LAS REDES DETECTADAS POR AIRODUMP Y WASH EN TIEMPO REAL
+#COLORES
+negro="\033[0;30m"
+rojo="\033[0;31m"
+verde="\033[0;32m"
+marron="\033[0;33m"
+azul="\033[0;34m"
+magenta="\033[0;35m"
+cyan="\033[01;36m"
+grisC="\033[0;37m"
+gris="\033[1;30m"
+rojoC="\033[1;31m"
+verdeC="\033[1;32m"
+amarillo="\033[1;33m"
+azulC="\033[1;34m"
+magentaC="\033[1;35m"
+cyanC="\033[1;36m"
+blanco="\033[1;37m"
+subrayar="\E[4m"
+parpadeoON="\E[5m"
+parpadeoOFF="\E[0m"
+resaltar="\E[7m"
+
+DISTRO=$(software/./distro_linux.sh)
+WPSPIN="./software/./WPSPinGeneratorMOD"
+PINS="./software/PINs.goy"	# base de datos de PINs por defecto conocidos
+CLAVES="claves"
+CAPTURA="captura"
+HANDSHAKES="handshakes"
+WEP="wep"
+WPA="wpa"
+WPS="wps/sesiones"
+WEP_VULNERABLES="software/BSSIDs_vulnerables_WEP.txt"
+WPA_VULNERABLES="software/BSSIDs_vulnerables_WPA.txt"
+PRIMERA_VEZ="SI"
+
+insertar_numero_en_listado()
+{
+rm -rf "$CAPTURA/listado-FINAL-FORMATEADO.lst" >/dev/null 2>&1
+let NUMERO=1
+while IFS=, read COLOR HAY_CLIENTE BSSID CANAL IV POTENCIA SUS TIPO ES_WPS COLOR2 MARCA COLOR ESSID
+do
+	printf "$COLOR  %3s)%1s  %17s    %2s   %2s   %3s  %1s%-4s  %2s$COLOR2%1s$COLOR  $ESSID\033[K\n" "$NUMERO" "$HAY_CLIENTE" "$BSSID" "$CANAL" "$IV" "$POTENCIA" "$SUS" "$TIPO" "$ES_WPS" "$MARCA">> "$CAPTURA/listado-FINAL-FORMATEADO.lst"
+	let NUMERO=$NUMERO+1
+done < "$CAPTURA/listado-FINAL-ORDENADO.csv"
+}
+
+crear_listado_APs_y_clientes()
+{
+let LINEAS_AP=`cat $CAPTURA/wifis-01.csv | grep -n -a -e "MAC Cliente" -e "Station MAC" | awk -F ':' '{print $1}'` #nº de línea donde se encuentra la cadena "MAC Cliente" o "Station MAC"
+let LINEAS_AP=$LINEAS_AP-2 #restamos 2 para eliminar también la línea "Station|Cliente" y la línea en blanco
+let LINEA_CLIENTES=$LINEAS_AP+3
+sed -n 3,${LINEAS_AP}p $CAPTURA/wifis-01.csv > $CAPTURA/listado-APs.csv #GUARDAMOS EN UN ARCHIVO LOS APs
+sed -n ${LINEA_CLIENTES},999p $CAPTURA/wifis-01.csv > $CAPTURA/listado-clientes.csv #GUARDAMOS EN OTRO LOS CLIENTES
+}
+
+crear_listado_ESSIDs_probados()
+{
+cat captura/wifis-01.csv | grep "(no asociado)" | sort -t "," -g -k 4 > "$CAPTURA/listado-clientes-no-asociados.csv"
+let CARACTERES=`cat "$CAPTURA/listado-clientes-no-asociados.csv" | wc -L`
+while [ $CARACTERES -le 93 ]
+do
+	cat captura/wifis-01.csv | grep "(no asociado)" | sort -t "," -g -k 4 > "$CAPTURA/listado-clientes-no-asociados.csv"
+	let CARACTERES=`cat "$CAPTURA/listado-clientes-no-asociados.csv" | wc -L`
+done
+rm -rf "$CAPTURA/listado-ESSIDs-probados.csv" >/dev/null 2>&1
+while IFS='|' read CONTENIDO #copiamos a un archivo sólo las líneas que contienen algún nombre de ESSID
+do
+	if [ ${#CONTENIDO} -gt 93 ]
+	then
+		echo "$CONTENIDO" >> "$CAPTURA/listado-ESSIDs-probados.csv"
+	fi
+done < "$CAPTURA/listado-clientes-no-asociados.csv"
+let CONT=1
+rm -rf "$CAPTURA/listado-ESSIDs-probados2.csv" >/dev/null 2>&1
+while IFS=, read MAC_CLIENTE FTS LTS POWER PAQUETES ASOCIADO ESSID #crea un .csv con los ESSIDs probados detectados
+do
+	POWER=`echo $POWER | sed 's/ //g'` #ELIMINA LOS ESPACIOS SI LOS HAY
+	if [[ $POWER -lt 0 ]]
+	then
+		if [[ $POWER -eq -1 ]] || [[ $POWER -eq 0 ]]
+		then
+			let POWER=0
+		else
+			let POWER=$POWER+100
+			if [[ $POWER -eq 0 ]] || [[ $POWER -le -1 ]]
+			then
+				let POWER=0
+			fi
+		fi
+	fi
+	ESSID=`echo "$ESSID" | sed 's/^ //' | tr -d '\r'` #corrige el ESSID eliminando el espacio del principio y el retorno de carro
+	let CUANTOS_ESSID=`echo "$ESSID" | awk -F "," '{print NF}'` #cuantos ESSIDs probados hay en el cliente actual
+	let CONT=1
+	while [ $CONT -le $CUANTOS_ESSID ]
+	do
+		ESSID2=`echo "$ESSID" | awk -F "," '{print $'$CONT'}'`
+		echo "$MAC_CLIENTE,$POWER,$ESSID2" >> "$CAPTURA/listado-ESSIDs-probados2.csv"
+		let CONT=$CONT+1
+	done
+done < "$CAPTURA/listado-ESSIDs-probados.csv"
+let CONT=1
+rm -rf "$CAPTURA/listado-ESSIDs-probados.lst" >/dev/null 2>&1
+while IFS=, read MAC_CLIENTE POTENCIA ESSID #inserta el número de línea y dá formato a la salida
+do
+	EXISTE_CLAVE=`find claves | grep "$ESSID"`
+	EXISTE_HANDSHAKE=`find handshakes | grep "$ESSID"`
+	if [ "$EXISTE_CLAVE" != "" ]
+	then
+		COLOR=$magentaC
+	else
+		if [ "$EXISTE_HANDSHAKE" != "" ]
+		then
+			COLOR=$marron
+		else
+			COLOR=$blanco
+		fi
+	fi
+	printf "$COLOR %3s)   $MAC_CLIENTE    %2s%1s    $ESSID\033[K\n" "$CONT" "$POTENCIA" "%" >> "$CAPTURA/listado-ESSIDs-probados.lst"
+	let CONT=$CONT+1
+done < "$CAPTURA/listado-ESSIDs-probados2.csv"
+}
+
+mostrar_listado_ESSIDs_probados()
+{
+while true
+do
+	crear_listado_ESSIDs_probados
+	if [ -f "$CAPTURA/listado-ESSIDs-probados.lst" ]
+	then
+		let LINEAS=`cat "$CAPTURA/listado-ESSIDs-probados.lst" | wc -l`
+		if [ $LINEAS -ne 0 ]
+		then
+			echo -e "\033[1;1H" #SITUA EL CURSOR EN LA POSICION 1,1
+			echo -e $cyanC"   Nº      MAC CLIENTE      SEÑAL   NOMBRE DE RED"
+			echo -e $cyanC"   ==   =================   =====   ============="
+			echo -en $blanco
+			cat "$CAPTURA/listado-ESSIDs-probados.lst"
+		fi
+	fi
+	sleep 1
+done
+}
+
+mostrar_redes_goyscript_normal()
+{
+echo
+echo
+echo -en $amarillo"     BUSCANDO REDES...   "
+while [ ! -f "$CAPTURA/wifis-01.csv" ] #espera a que se genere el archivo
+do
+	sleep 1
+done
+CONTENIDO=$(cat "$CAPTURA/wifis-01.csv")
+while [ "$CONTENIDO" = "" ]
+do
+	CONTENIDO=$(cat "$CAPTURA/wifis-01.csv")
+done
+LINEAS_AP=`cat "$CAPTURA/wifis-01.csv" | egrep -a -n '(Station|Cliente)' | awk -F : '{print $1}'`
+while [[ $LINEAS_AP -le 4 ]] #ESPERA A QUE SE DETECTE ALGÚN AP
+do
+	LINEAS_AP=`cat "$CAPTURA/wifis-01.csv" | egrep -a -n '(Station|Cliente)' | awk -F : '{print $1}'`
+done
+while [ ! -f "$CAPTURA/listado-wps.lst" ] #espera a que se genere el archivo
+do
+	sleep 1
+done
+while true
+do
+	crear_listado_APs_y_clientes
+	rm -rf "$CAPTURA/listado-FINAL.csv" > /dev/null 2>&1
+	while IFS=, read MAC FTS LTS CHANNEL SPEED PRIVACY CYPHER AUTH POWER BEACON IV LANIP IDLENGTH ESSID KEY
+	do
+		POWER=`echo $POWER | sed 's/ //g'` #ELIMINA LOS ESPACIOS SI LOS HAY
+		if [[ $POWER -lt 0 ]]
+		then
+			if [[ $POWER -eq -1 ]] || [[ $POWER -eq 0 ]]
+			then
+				let POWER=0
+			else
+				let POWER=$POWER+100
+				if [[ $POWER -eq 0 ]] || [[ $POWER -le -1 ]]
+				then
+					let POWER=0
+				fi
+			fi
+		fi
+		IV=`echo $IV | sed 's/ //g'` #CORRIGE LOS IVs RECORTANDO LOS ESPACIOS
+		ESSID=`echo "$ESSID" | sed 's/^ //'` #CORRIGE EL NOMBRE DE LA RED WiFi RECORTANDO EL ESPACIO DEL PRINCIPIO
+		CHANNEL=`echo $CHANNEL | sed 's/ //g'` #CORRIGE EL CANAL ELIMINANDO LOS ESPACIOS
+		if [[ $CHANNEL -gt 13 ]] || [[ $CHANNEL -lt 1 ]] #SI EL CANAL NO ESTÁ ENTRE 1 Y 13 ENTONCES NO ES VÁLIDO
+		then
+			CHANNEL="-"
+		fi
+		PRIVACY=`echo "$PRIVACY" | sed 's/ //g' | cut -c-4`
+		WPS_ACTIVADO=`cat "$CAPTURA/listado-wps.lst" | grep "$MAC"`
+		MARCA=""
+		COLOR2=$COLOR
+		if [ "$WPS_ACTIVADO" != "" ]
+		then
+			ES_WPS="SI"
+			BSSID_3PARES=`echo "$MAC" | cut -c-8`
+			MARCA=`"$WPSPIN" --macs | grep "$BSSID_3PARES" 2>/dev/null`
+			if [ "$MARCA" != "" ]
+			then
+				ES_WPS="SI"
+				ESSID_WPSPIN=`echo "$MARCA" | awk '{print substr($0,13,200)}' | sed 's/?//g'`
+				ESSID_COINCIDE=`echo "$ESSID" | grep "$ESSID_WPSPIN"`
+				if [ "$ESSID_COINCIDE" != "" ]
+				then
+					MARCA="#"
+					COLOR2="$verdeC"
+				else
+					MARCA="?"
+					COLOR2="$rojoC"
+				fi
+			else
+				ES_WPS="SI"
+				MARCA=`grep "$BSSID_3PARES" "$PINS"`
+				if [ "$MARCA" != "" ]
+				then
+					MARCA="*"
+					COLOR2="$amarillo"
+				else
+					MARCA=""
+				fi
+			fi
+		else
+			ES_WPS=""
+		fi
+		if [ "$PRIVACY" = "" ]
+		then
+			PRIVACY="----"
+		fi
+		MAC_GUIONES=`echo $MAC | sed 's/:/-/g'`
+		EXISTE_CLAVE=`find "$CLAVES" | grep "$ESSID ($MAC_GUIONES).txt"`
+		EXISTE_HANDSHAKE=`find "$HANDSHAKES" | grep "$ESSID ($MAC_GUIONES).cap"`
+		EXISTE_CAPTURA_WEP=`find "$WEP" | grep "$ESSID ($MAC_GUIONES)"`
+		EXISTE_SESION=`find "$WPS" | grep "$ESSID ($MAC_GUIONES)".wps`
+		if [ "$EXISTE_CLAVE" != "" ]
+		then
+			COLOR="$magentaC"
+		else
+			if [ "$EXISTE_HANDSHAKE" != "" ] || [ "$EXISTE_SESION" != "" ] || [ "$EXISTE_CAPTURA_WEP" != "" ]
+			then
+				COLOR="$marron"
+				if [ "$SOLO_WPS" = "SI" ] && [ "$EXISTE_SESION" = "" ] #si estamos buscando sólo WPS y no existe la sesión será blanco
+				then
+					COLOR="$blanco"
+				fi
+			else
+				COLOR="$blanco"
+			fi
+		fi
+		if [ "$ESSID" = "" ] || [ "$CHANNEL" = "-1" ] #SI EL NOMBRE DE LA RED ESTÁ VACÍO ES QUE ES UNA RED OCULTA
+		then
+			ESSID="< Oculta >"
+			COLOR="$rojoC"
+		fi
+		HAY_CLIENTE=`cat "$CAPTURA/listado-clientes.csv" | grep $MAC`
+		if [ "$HAY_CLIENTE" != "" ]
+		then
+			HAY_CLIENTE="#"
+		else
+			HAY_CLIENTE=""
+		fi
+		if [[ $IV -ge 99 ]]
+		then
+			IV="99"
+		else
+			if [[ $IV -eq 0 ]] || [[ "$IV" = "" ]]
+			then
+				IV="-"
+			fi
+		fi
+		SUS=""
+		if [ "$PRIVACY" = "WEP" ]
+		then
+			BSSID_3PARES=`echo "$MAC" | cut -c-8`
+			DIC_WEP=`grep "$BSSID_3PARES" "$WEP_VULNERABLES"`
+			if [ "$DIC_WEP" = "" ] #si en la base de datos no se encuentra el BSSID comprobamos el ESSID de las que no tienen un BSSID determinado (XX:XX:XX)
+			then
+				DIC_WEP=`grep "XX:XX:XX" "$WEP_VULNERABLES"`
+			fi
+			LINEAS_DIC_WEP=`echo "$DIC_WEP" | wc -l`
+			let CONT=1
+			while [ $CONT -le $LINEAS_DIC_WEP ] #comprobamos que el ESSID coincida
+			do
+				ESSID_WEP=`echo "$DIC_WEP" | sed -n ${CONT}p | awk -F '|' '{print $2}' | sed 's/X//g'` #ESSID de la línea correspondiente sin las X (ej: WLAN_)
+				VALE=`echo "$ESSID" | grep "$ESSID_WEP"` #comprueba si el patrón de ESSID_WEP está en el ESSID actual
+				if [ "$VALE" != "" ]
+				then
+					SUS="*" #si está lo marcamos
+					break   #y salimos del bucle
+				fi
+				let CONT=$CONT+1
+			done
+		else
+			if [ "$PRIVACY" = "WPA" ] || [ "$PRIVACY" = "WPA2" ] || [ "$PRIVACY" = "WPA " ]
+			then
+				BSSID_3PARES=`echo "$MAC" | cut -c-8`
+				DIC_WPA=`grep "$BSSID_3PARES" "$WPA_VULNERABLES"`
+				if [ "$DIC_WPA" = "" ] #si en la base de datos no se encuentra el BSSID comprobamos el ESSID de las que no tienen un BSSID determinado (XX:XX:XX)
+				then
+					DIC_WPA=`grep "XX:XX:XX" "$WPA_VULNERABLES"`
+				fi
+				LINEAS_DIC_WPA=`echo "$DIC_WPA" | wc -l`
+				let CONT=1
+				while [ $CONT -le $LINEAS_DIC_WPA ] #comprobamos que el ESSID coincida
+				do
+					ESSID_WPA=`echo "$DIC_WPA" | sed -n ${CONT}p | awk -F '|' '{print $2}' | sed 's/X//g'` #ESSID de la línea correspondiente sin las X (ej: WLAN_)
+					VALE=`echo "$ESSID" | grep "$ESSID_WPA"` #comprueba si el patrón de ESSID_WPA está en el ESSID actual
+					if [ "$VALE" != "" ]
+					then
+						SUS="*" #si está lo marcamos
+						break   #y salimos del bucle
+					fi
+					let CONT=$CONT+1
+				done
+			fi
+		fi
+		echo -e "$COLOR,$HAY_CLIENTE,$MAC,$CHANNEL,$IV,$POWER%,$SUS,$PRIVACY,$ES_WPS,$COLOR2,$MARCA,$COLOR,$ESSID" >> "$CAPTURA/listado-FINAL.csv"
+	done < "$CAPTURA/listado-APs.csv"
+	if [ -f "$CAPTURA/listado-FINAL.csv" ]
+	then
+		if [ "$DISTRO" != "OpenWrt" ]
+		then
+			sort -t "," -g -k 6 "$CAPTURA/listado-FINAL.csv" > "$CAPTURA/listado-FINAL-ORDENADO.csv"
+		else
+			sort "$CAPTURA/listado-FINAL.csv" > "$CAPTURA/listado-FINAL-ORDENADO.csv"
+		fi
+		insertar_numero_en_listado
+		if [ "$PRIMERA_VEZ" = "SI" ] #limpia la pantalla la primera vez sólo
+		then
+			PRIMERA_VEZ="NO"
+			clear
+		fi
+		echo -e "\033[1;1H" #SITUA EL CURSOR EN LA POSICION 1,1
+		echo -e $cyanC"    Nº          MAC         CANAL  IV  SEÑAL  TIPO  WPS  NOMBRE DE RED"
+		echo -e $cyanC"    ==   =================  =====  ==  =====  ====  ===  ============="
+		cat "$CAPTURA/listado-FINAL-FORMATEADO.lst"
+	fi
+	sleep 1
+done
+}
+
+mostrar_redes_goyscript_wps()
+{
+echo
+echo
+echo -en $amarillo"     BUSCANDO REDES CON WPS ACTIVADO...   "
+while [ ! -f "$CAPTURA/wifis-01.csv" ] #espera a que se genere el archivo
+do
+	sleep 1
+done
+CONTENIDO=$(cat "$CAPTURA/wifis-01.csv")
+while [ "$CONTENIDO" = "" ]
+do
+        CONTENIDO=$(cat "$CAPTURA/wifis-01.csv")
+done
+LINEAS_AP=`cat "$CAPTURA/wifis-01.csv" | egrep -a -n '(Station|Cliente)' | awk -F : '{print $1}'`
+while [[ $LINEAS_AP -le 4 ]] #espera a que se detecte algún AP (si la línea de título de los clientes
+do                           #está en la línea 4 es porque aún no ha detectado ningún AP)
+	LINEAS_AP=`cat "$CAPTURA/wifis-01.csv" | egrep -a -n '(Station|Cliente)' | awk -F : '{print $1}'`
+done
+while [ ! -f "$CAPTURA/listado-wps.lst" ] #espera a que se genere el archivo
+do
+	sleep 1
+done
+let LINEAS=`cat "$CAPTURA/listado-wps.lst" | wc -l`
+while [ $LINEAS -le 2 ] #espera a que se encuentre algún AP con WPS activado (las 2 primeras líneas son los títulos de las columnas)
+do
+	let LINEAS=`cat "$CAPTURA/listado-wps.lst" | wc -l`
+	sleep 1
+done
+ES_WPS="SI"
+while true
+do
+	crear_listado_APs_y_clientes
+	rm -rf "$CAPTURA/listado-FINAL.csv" > /dev/null 2>&1
+	sed '1,2d' "$CAPTURA/listado-wps.lst" > "$CAPTURA/listado-wps-sin-titulo.lst" #elimina los títulos del archivo
+	while IFS=, read FILA
+	do
+		BSSID=`echo "$FILA" | awk '{print $1}'`
+		CANAL=`echo "$FILA" | awk '{print $2}'`
+		POWER=`echo "$FILA" | awk '{print $3}'`
+		BLOQUEO=`echo "$FILA" | awk '{print $5}'`
+		ESSID=`echo "$FILA" | awk '{ for (x=6; x<=NF; x++) { printf " %s", $x } printf "\n" }' | sed 's/^ //'`
+		PRIVACY=`grep "$BSSID" captura/listado-APs.csv | awk -F "," '{print $6}' | sed 's/ //g' | cut -c-4`
+		if [[ $POWER -lt 0 ]]
+		then
+			if [[ $POWER -eq -1 ]] || [[ $POWER -eq 0 ]]
+			then
+				let POWER=0
+			else
+				let POWER=$POWER+100
+				if [[ $POWER -eq 0 ]] || [[ $POWER -le -1 ]]
+				then
+					let POWER=0
+				fi
+			fi
+		fi
+		HAY_CLIENTE=`grep "BSSID" "$CAPTURA/listado-clientes.csv"`
+		if [ "$HAY_CLIENTE" != "" ]
+		then
+			HAY_CLIENTE="#"
+		else
+			HAY_CLIENTE=""
+		fi
+		SUS=""
+		if [ "$PRIVACY" = "WEP" ]
+		then
+			BSSID_3PARES=`echo "$BSSID" | cut -c-8`
+			DIC_WEP=`grep "$BSSID_3PARES" "$WEP_VULNERABLES"`
+			if [ "$DIC_WEP" = "" ] #si en la base de datos no se encuentra el BSSID comprobamos el ESSID de las que no tienen un BSSID determinado (XX:XX:XX)
+			then
+				DIC_WEP=`grep "XX:XX:XX" "$WEP_VULNERABLES"`
+			fi
+			LINEAS_DIC_WEP=`echo "$DIC_WEP" | wc -l`
+			let CONT=1
+			while [ $CONT -le $LINEAS_DIC_WEP ] #comprobamos que el ESSID coincida
+			do
+				ESSID_WEP=`echo "$DIC_WEP" | sed -n ${CONT}p | awk -F '|' '{print $2}' | sed 's/X//g'` #ESSID de la línea correspondiente sin las X (ej: WLAN_)
+				VALE=`echo "$ESSID" | grep "$ESSID_WEP"` #comprueba si el patrón de ESSID_WEP está en el ESSID actual
+				if [ "$VALE" != "" ]
+				then
+					SUS="*" #si está lo marcamos
+					break   #y salimos del bucle
+				fi
+				let CONT=$CONT+1
+			done
+		else
+			if [ "$PRIVACY" = "WPA" ] || [ "$PRIVACY" = "WPA2" ] || [ "$PRIVACY" = "WPA " ]
+			then
+				BSSID_3PARES=`echo "$BSSID" | cut -c-8`
+				DIC_WPA=`grep "$BSSID_3PARES" "$WPA_VULNERABLES"`
+				if [ "$DIC_WPA" = "" ] #si en la base de datos no se encuentra el BSSID comprobamos el ESSID de las que no tienen un BSSID determinado (XX:XX:XX)
+				then
+					DIC_WPA=`grep "XX:XX:XX" "$WPA_VULNERABLES"`
+				fi
+				LINEAS_DIC_WPA=`echo "$DIC_WPA" | wc -l`
+				let CONT=1
+				while [ $CONT -le $LINEAS_DIC_WPA ] #comprobamos que el ESSID coincida
+				do
+					ESSID_WPA=`echo "$DIC_WPA" | sed -n ${CONT}p | awk -F '|' '{print $2}' | sed 's/X//g'` #ESSID de la línea correspondiente sin las X (ej: WLAN_)
+					VALE=`echo "$ESSID" | grep "$ESSID_WPA"` #comprueba si el patrón de ESSID_WPA está en el ESSID actual
+					if [ "$VALE" != "" ]
+					then
+						SUS="*" #si está lo marcamos
+						break   #y salimos del bucle
+					fi
+					let CONT=$CONT+1
+				done
+			fi
+		fi
+		MAC_GUIONES=`echo "$BSSID" | sed 's/:/-/g'`
+		EXISTE_CLAVE=`find "$CLAVES" | grep "$ESSID ($MAC_GUIONES).txt"`
+		EXISTE_HANDSHAKE=`find "$HANDSHAKES" | grep "$ESSID ($MAC_GUIONES).cap"`
+		EXISTE_CAPTURA_WEP=`find "$WEP" | grep "$ESSID ($MAC_GUIONES)"`
+		EXISTE_SESION=`find "$WPS" | grep "$ESSID ($MAC_GUIONES)".wps`
+		if [ "$EXISTE_CLAVE" != "" ] #si ya tenemos la contraseña se mostrará en morado
+		then
+			COLOR="$magentaC"
+		else
+			if [ "$BLOQUEO" != "No" ] #si el router está bloqueado se mostrará en rojo
+			then
+				COLOR="$rojoC"
+			else
+				if [ "$EXISTE_HANDSHAKE" != "" ] || [ "$EXISTE_SESION" != "" ] || [ "$EXISTE_CAPTURA_WEP" != "" ]
+				then
+					COLOR="$marron"
+					if [ "$SOLO_WPS" = "SI" ] && [ "$EXISTE_SESION" = "" ] #si estamos buscando sólo WPS
+					then                                                   #y no existe la sesión será blanco
+						COLOR="$blanco"
+					fi
+				else
+					COLOR="$blanco"
+				fi
+			fi
+		fi
+		BSSID_3PARES=`echo "$BSSID" | cut -c-8`
+		MARCA=`"$WPSPIN" --macs | grep "$BSSID_3PARES" 2>/dev/null`
+		if [ "$MARCA" != "" ]
+		then
+			ES_WPS="SI"
+			ESSID_WPSPIN=`echo "$MARCA" | awk '{print substr($0,13,200)}' | sed 's/?//g'`
+			ESSID_COINCIDE=`echo "$ESSID" | grep "$ESSID_WPSPIN"`
+			if [ "$ESSID_COINCIDE" != "" ]
+			then
+				MARCA="#"
+				COLOR2="$verdeC"
+			else
+				MARCA="?"
+				COLOR2="$rojoC"
+			fi
+		else
+			ES_WPS="SI"
+			MARCA=`grep "$BSSID_3PARES" "$PINS"`
+			if [ "$MARCA" != "" ]
+			then
+				MARCA="*"
+				COLOR2="$amarillo"
+			else
+				MARCA=""
+			fi
+		fi
+		IV=`grep "$BSSID" "$CAPTURA/wifis-01.csv" | awk -F "," '{print $11}' | sed 's/ //g'`
+		if [[ $IV -ge 99 ]]
+		then
+			IV="99"
+		else
+			if [[ $IV -eq 0 ]] || [[ "$IV" = "" ]]
+			then
+				IV="-"
+			fi
+		fi
+		echo -e "$COLOR,$HAY_CLIENTE,$BSSID,$CANAL,$IV,$POWER%,$SUS,$PRIVACY,$ES_WPS,$COLOR2,$MARCA,$COLOR,$ESSID" >> "$CAPTURA/listado-FINAL.csv"
+	done < "$CAPTURA/listado-wps-sin-titulo.lst"
+	if [ -f "$CAPTURA/listado-FINAL.csv" ]
+	then
+		if [ "$DISTRO" != "OpenWrt" ]
+		then
+			sort -t "," -g -k 6 "$CAPTURA/listado-FINAL.csv" > "$CAPTURA/listado-FINAL-ORDENADO.csv"
+		else
+			sort "$CAPTURA/listado-FINAL.csv" > "$CAPTURA/listado-FINAL-ORDENADO.csv"
+		fi
+		insertar_numero_en_listado
+		if [ "$PRIMERA_VEZ" = "SI" ] #limpia la pantalla la primera vez sólo
+		then
+			PRIMERA_VEZ="NO"
+			clear
+		fi
+		echo -e "\033[1;1H" #SITUA EL CURSOR EN LA POSICION 1,1
+		echo -e $cyanC"    Nº          MAC         CANAL  IV  SEÑAL  TIPO  WPS  NOMBRE DE RED"
+		echo -e $cyanC"    ==   =================  =====  ==  =====  ====  ===  ============="
+		cat "$CAPTURA/listado-FINAL-FORMATEADO.lst"
+	fi
+	sleep 1
+done
+}
+
+
+### PROGRAMA PRINCIPAL ###
+clear
+if [ "$1" = "WPS" ] #para controlar si se mostrarán solo las redes con WPS activado
+then
+	SOLO_WPS="SI"
+else
+	SOLO_WPS="NO"
+fi
+if [ "$1" = "APF" ]
+then
+	echo
+	echo
+	echo -en $amarillo"     BUSCANDO ESSIDs PROBADOS...   "
+	mostrar_listado_ESSIDs_probados
+else
+	if [ "$SOLO_WPS" = "SI" ]
+	then
+		mostrar_redes_goyscript_wps
+	else
+		mostrar_redes_goyscript_normal
+	fi
+fi
+exit 0

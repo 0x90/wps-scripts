@@ -1,0 +1,28 @@
+BSSID   |ESSID  |PROGRAMA|OBSERVACIONES
+-------------------------------------------------------
+00:01:36|WLAN_XX|wlandecrypter|
+00:01:38|WLAN_XX|wlandecrypter|
+00:02:CF|WLAN_XX|wlandecrypter|
+00:03:C9|WLAN_XX|wlandecrypter|
+00:03:DA|WLAN_XX|wlandecrypter|
+00:13:49|WLAN_XX|wlandecrypter|
+00:16:38|WLAN_XX|wlandecrypter|
+00:19:15|WLAN_XX|wlandecrypter|
+00:19:CB|WLAN_XX|wlandecrypter|
+00:1A:2B|WLAN_XX|wlandecrypter|
+00:1D:20|WLAN_XX|wlandecrypter|
+00:1F:9F|WLAN_XX|wlandecrypter|
+00:23:F8|WLAN_XX|wlandecrypter|
+00:30:DA|WLAN_XX|wlandecrypter|
+00:60:B3|WLAN_XX|wlandecrypter|
+00:A0:C5|WLAN_XX|wlandecrypter|
+40:4A:03|WLAN_XX|wlandecrypter|
+50:67:F0|WLAN_XX|wlandecrypter|
+C8:6C:87|WLAN_XX|wlandecrypter|
+E0:91:53|WLAN_XX|wlandecrypter|
+00:1A:2B|JAZZTEL_XX|jazzteldecrypter|
+XX:XX:XX|WLANXXXXXX|wlan4xx|
+XX:XX:XX|WIFIXXXXXX|wlan4xx|
+XX:XX:XX|YACOMXXXXXX|wlan4xx|
+XX:XX:XX|SpeedTouchXXXXXX|stkeys|
+XX:XX:XX|ONOXXXX|ono4xx|las XXXX del ESSID tienen que ser números

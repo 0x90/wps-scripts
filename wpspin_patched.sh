@@ -103,7 +103,8 @@ GENERATE(){                                                                  # t
 UNKNOWN=0                                                                    # By default routers are  marked as supported with 0, when there are not this value will be changed
 SPECIAL=0
 
-CHECKBSSID=$(echo $BSSID | cut -d ":" -f1,2,3 | tr -d ':')                   # we take pout the 6 first half of the mac address (to identify the devices=  
+CHECKBSSID=$(echo $BSSID | cut -d ":" -f1,2,3 | tr -d ':')                   # we take pout the 6 first half of the mac address (to identify the devices=
+#echo $CHECKBSSID
 FINBSSID=$(echo $BSSID | cut -d ':' -f4,5,6)                                 # we keep the other half to generate the PIN
 MAC=$(echo $FINBSSID | tr -d ':')                                            # taking away the ":" 
 CONVERTEDMAC=$(printf '%d\n' 0x$MAC)                                         # conversion to decimal
@@ -1062,46 +1063,46 @@ rm attack.txt &> /dev/null
 ######################################################
 unset
 CLEAN
-
-echo -e "$magenta
-              _       _  _____    _____   _____  _______  _     _ 
-             (_)  _  (_)(_____)  (_____) (_____)(_______)(_)   (_)
-             (_) (_) (_)(_)__(_)(_)___   (_)__(_)  (_)   (__)_ (_)
-             (_) (_) (_)(_____)   (___)_ (_____)   (_)   (_)(_)(_)
-             (_)_(_)_(_)(_)       ____(_)(_)     __(_)__ (_)  (__)
-              (__) (__) (_)      (_____) (_)    (_______)(_)   (_)    $colorbase
-
-$amarillo www.crack-wifi.com     www.facebook.com/soufian.ckin2u    www.auditoriaswireless.net$colorbase
-
-               by$blanco kcdtv$colorbase feat.$blanco antares_145$colorbase, $blanco r00tnuLL$colorbase and$blanco 1camaron1
-          $colorbase     including computepinC83A35 algorithm by$blanco ZaoChunseng $colorbase
-
-                $azulfluo   DEFAULT PIN GENERATOR & WPS PROTOCOL ATTACK$colorbase
-
-"
-                                                       
+#
+#echo -e "$magenta
+#              _       _  _____    _____   _____  _______  _     _
+#             (_)  _  (_)(_____)  (_____) (_____)(_______)(_)   (_)
+#             (_) (_) (_)(_)__(_)(_)___   (_)__(_)  (_)   (__)_ (_)
+#             (_) (_) (_)(_____)   (___)_ (_____)   (_)   (_)(_)(_)
+#             (_)_(_)_(_)(_)       ____(_)(_)     __(_)__ (_)  (__)
+#              (__) (__) (_)      (_____) (_)    (_______)(_)   (_)    $colorbase
+#
+#$amarillo www.crack-wifi.com     www.facebook.com/soufian.ckin2u    www.auditoriaswireless.net$colorbase
+#
+#               by$blanco kcdtv$colorbase feat.$blanco antares_145$colorbase, $blanco r00tnuLL$colorbase and$blanco 1camaron1
+#          $colorbase     including computepinC83A35 algorithm by$blanco ZaoChunseng $colorbase
+#
+#                $azulfluo   DEFAULT PIN GENERATOR & WPS PROTOCOL ATTACK$colorbase
+#
+#"
+#
                                           
-SELECTIONLANGUE=0                                  # The script start with a menu to select labnguage, default value is 0 for the variable that set the selection
-while [ $SELECTIONLANGUE -eq 0 ]; do               # while this value is equal to zero  
-echo -e "                         +---------------------------+     "
-echo -e "                         |   $blanco  1$colorbase  -$amarillo  ENGLISH   $colorbase      |     "
-echo -e "                         |   $blanco  2$colorbase  -$amarillo  ESPANOL   $colorbase      |     "
-echo -e "                         |   $blanco  3$colorbase  -$amarillo  FRANCAIS  $colorbase      |     "
-echo -e "                         +---------------------------+     "
-echo -e " "
-echo ""
-read -ep "                                Language : " SELECT                   # we propose to the user to enter a value to define "select"
- if [[ $SELECT == "1" ]]; then                     # if this value is 1
-  SELECTIONLANGUE=1                                # then the selected language will be 1, English
-   elif [[ $SELECT == "2" ]]; then            
-   SELECTIONLANGUE=2                               # 2 will be Spanish
-     elif [[ $SELECT == "3" ]]; then
-     SELECTIONLANGUE=3                             # 3 will be French
-       else                                        # anything else will keep the variable with a value of 0 and bring us back to the beginning of the while loop
-       SELECTIONLANGUE=0                           # where the user has to enter his choice for the language
- fi
-done  
-
+#SELECTIONLANGUE=0                                  # The script start with a menu to select labnguage, default value is 0 for the variable that set the selection
+#while [ $SELECTIONLANGUE -eq 0 ]; do               # while this value is equal to zero
+#echo -e "                         +---------------------------+     "
+#echo -e "                         |   $blanco  1$colorbase  -$amarillo  ENGLISH   $colorbase      |     "
+#echo -e "                         |   $blanco  2$colorbase  -$amarillo  ESPANOL   $colorbase      |     "
+#echo -e "                         |   $blanco  3$colorbase  -$amarillo  FRANCAIS  $colorbase      |     "
+#echo -e "                         +---------------------------+     "
+#echo -e " "
+#echo ""
+#read -ep "                                Language : " SELECT                   # we propose to the user to enter a value to define "select"
+# if [[ $SELECT == "1" ]]; then                     # if this value is 1
+#  SELECTIONLANGUE=1                                # then the selected language will be 1, English
+#   elif [[ $SELECT == "2" ]]; then
+#   SELECTIONLANGUE=2                               # 2 will be Spanish
+#     elif [[ $SELECT == "3" ]]; then
+#     SELECTIONLANGUE=3                             # 3 will be French
+#       else                                        # anything else will keep the variable with a value of 0 and bring us back to the beginning of the while loop
+#       SELECTIONLANGUE=0                           # where the user has to enter his choice for the language
+# fi
+#done
+SELECTIONLANGUE=1
 
 ################################################ WE DEFINE THE FUNCTIONS AND VARIABLES THAT CHANGES WITH LANGUAGE #######################################################
 #################################################################
@@ -2363,11 +2364,17 @@ fi
 #############################################           2    -   START  , the RESTART, THIS is the script
 ##############################################################################
 
-
-IFACE                                             #     We first invocate iface tio check the interface compoatibility
-REAVER_CHECK                                      #     And if reaver is installed
-BIG_MENUE
-exit 0                                                  # if this two parameters arae OK than the user can acsses teh big menue, otherwise he will be limited to short menue
+BSSID=$1
+ESSID=$2
+#echo $BSSID
+#echo $ESSID
+GENERATE
+echo $PIN
+#echo $PIN2
+#IFACE                                             #     We first invocate iface tio check the interface compoatibility
+#REAVER_CHECK                                      #     And if reaver is installed
+#BIG_MENUE
+#exit 0                                                  # if this two parameters arae OK than the user can acsses teh big menue, otherwise he will be limited to short menue
 
 
 

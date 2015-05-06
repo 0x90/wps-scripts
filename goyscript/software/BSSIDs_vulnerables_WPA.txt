@@ -1,0 +1,49 @@
+BSSID   |ESSID  |PROGRAMA|OBSERVACIONES
+-------------------------------------------------------
+00:01:38|ONOXXXX|ono4xx|las XXXX tienen que ser números
+E0:91:53|ONOXXXX|ono4xx|las XXXX tienen que ser números
+00:26:44|ONOXXXXXX|stkeys|
+00:26:44|ORANGE-XXXXXX|stkeys|
+00:24:17|ORANGE-XXXXXX|stkeys|
+XX:XX:XX|SpeedTouchXXXXXX|stkeys|
+00:24:D1|R-wlanXXXX|Mundo-R.sh|20 + nº de 6 cifras (ej: 20123456)
+00:26:24|R-WLAN XX|Mundo-R.sh|20 + nº de 6 cifras (ej: 20123456)
+00:26:5B|RWlan XX|Mundo-R.sh|nº de 6 cifras + 0000 (ej: 3981380000)
+00:26:5B|wifimedia_R-XXXX|generico.51.ocho-cifras.sh|Un número de 8 dígitos
+00:05:CA|Rw-lanXX|generico.51.ocho-cifras.sh|Un número de 8 dígitos
+00:30:DA|WLAN_XXXX|wlan_xxxx|
+00:30:DA|JAZZTEL_XXXX|wlan_xxxx|
+1C:C6:3C|Orange-XXXX|Orange-XXXX.sh|
+50:7E:5D|Orange-XXXX|Orange-XXXX.sh| 
+74:31:70|Orange-XXXX|Orange-XXXX.sh|
+84:9C:A6|Orange-XXXX|Orange-XXXX.sh|
+88:03:55|Orange-XXXX|Orange-XXXX.sh|
+00:19:15|Tele2|Tele2.sh|IX1V + Nº de 7 cifras o IX1VPV + nº de 7 cifras (ej: IX1V1234567 o IX1VPV1234567)
+00:1A:2B|WLAN_XXXX|wpamagickey|
+00:1D:20|WLAN_XXXX|wpamagickey|
+38:72:C0|WLAN_XXXX|wpamagickey|
+64:68:0C|WLAN_XXXX|wpamagickey|
+00:19:15|WLAN_XXXX|wpamagickey|
+00:1F:A4|WLAN_XXXX|wpamagickey|
+F4:3E:61|WLAN_XXXX|wpamagickey|
+00:1A:2B|Jazztel_XXXX|wpamagickey|
+00:1D:20|Jazztel_XXXX|wpamagickey|
+38:72:C0|Jazztel_XXXX|wpamagickey|
+64:68:0C|Jazztel_XXXX|wpamagickey|
+00:19:15|Jazztel_XXXX|wpamagickey|
+00:1F:A4|Jazztel_XXXX|wpamagickey|
+F4:3E:61|Jazztel_XXXX|wpamagickey|
+00:1A:2B|wlan_XXXX|wpamagickey|
+00:1D:20|wlan_XXXX|wpamagickey|
+38:72:C0|wlan_XXXX|wpamagickey|
+64:68:0C|wlan_XXXX|wpamagickey|
+00:19:15|wlan_XXXX|wpamagickey|
+00:1F:A4|wlan_XXXX|wpamagickey|
+F4:3E:61|wlan_XXXX|wpamagickey|
+00:1A:2B|JAZZTEL_XXXX|wpamagickey|
+00:1D:20|JAZZTEL_XXXX|wpamagickey|
+38:72:C0|JAZZTEL_XXXX|wpamagickey|
+64:68:0C|JAZZTEL_XXXX|wpamagickey|
+00:19:15|JAZZTEL_XXXX|wpamagickey|
+00:1F:A4|JAZZTEL_XXXX|wpamagickey|
+F4:3E:61|JAZZTEL_XXXX|wpamagickey|

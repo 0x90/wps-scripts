@@ -1,0 +1,970 @@
+#!/bin/sh
+# LISTA DE CAMBIOS
+# versión 2.8
+#	- Versión inicial
+#	- Interfaz que lanza el script correspondiente dependiendo del tipo
+#	  de encriptación de la red y, en su caso, del modo de ataque seleccionado.
+#	- Se muestran las redes detectadas en tiempo real, indicando en todo momento
+#	  si tiene clientes conectados, si ya se obtuvo el handshake y en caso de que
+#	  tenga WPS activado se indica si se conoce el pin (#) y si la MAC se
+#	  encuentra en la base de datos de pins conocidos (*)
+# versión 2.9
+#	- Mejoras estéticas
+# versión 3.0
+#	- Ahora al cancelar el proceso de descubrir red oculta se vuelve al menú de
+#	  selección de redes
+#	- Ahora se comprueba al inicio si el dispositivo de almacenamiento es de
+#	  sólo lectura
+# versión 3.1
+#	- Ahora no se muestran las redes abiertas en el listado
+#	- Ahora se muestra un asterisco (*) en el tipo de encriptación de la red
+#	  si ésta es susceptible de ataque por diccionario (tanto WEP como en WPA)
+#	- Ahora se puede filtrar la búsqueda de redes por WEP, WPA o WPS
+#	  Para más información "./goyscript --help"
+#	- Ahora se comprueba si se tienen permisos de root para poder ejecutar el script
+#	- Ahora se desactiva el modo monitor y se inicia wicd al cerrar el script
+# versión 3.2
+#	- Corrección de errores
+# versión 3.4
+#	- Optimizada la búsqueda de redes con WPS activado
+#	- Ahora cuando filtramos la búsqueda por WPS se muestran
+#	  en rojo los APs bloqueados
+#	- Ahora se puede usar sin interfaz gráfica (con goyscriptTTY)
+#	- Ahora se pueden introducir manualmente los datos que faltan en una red oculta
+#	- Añadida compatibilidad con OpenWrt
+
+
+
+##### CONSTANTES #####
+
+negro="\033[0;30m"
+rojo="\033[0;31m"
+verde="\033[0;32m"
+marron="\033[0;33m"
+azul="\033[0;34m"
+magenta="\033[0;35m"
+cyan="\033[01;36m"
+grisC="\033[0;37m"
+gris="\033[1;30m"
+rojoC="\033[1;31m"
+verdeC="\033[1;32m"
+amarillo="\033[1;33m"
+azulC="\033[1;34m"
+magentaC="\033[1;35m"
+cyanC="\033[1;36m"
+blanco="\033[1;37m"
+subrayar="\E[4m"
+parpadeoON="\E[5m"
+parpadeoOFF="\E[0m"
+resaltar="\E[7m"
+
+VERSION=$(cat VERSION)
+DEBUG="-hold"
+DEBUG="" #comentar esta línea para activar el modo depuración
+
+DISTRO=$(software/./distro_linux.sh)
+if [ "$DISTRO" != "OpenWrt" ] #si no se está usando OpenWrt
+then
+	AIRMON="software/airmon-ng"
+	AIRODUMP="software/airodump-ng"
+	AIREPLAY="software/aireplay-ng"
+	WASH="software/wash"
+	PARAMETRO_PS="-A"
+else #si se está usando OpenWrt
+	AIRMON="airmon-ng"
+	AIRODUMP="airodump-ng"
+	AIREPLAY="aireplay-ng"
+	WASH="wash"
+	PARAMETRO_PS=""
+	parpadeoON=""
+	parpadeoOFF=""
+	subrayar=""
+fi
+SCREEN="screen"
+MOSTRAR_REDES_DETECTADAS="software/./goyscript_redes"
+FABRICANTE="software/./fabricante.sh"
+
+CAPTURA="captura"
+CLAVES="claves"
+HANDSHAKES="handshakes"
+WEP="wep"
+WPA="wpa"
+WPS="wps/sesiones"
+TMP="tmp"
+
+
+comprobar_ayuda()
+{
+echo -e $blanco
+echo "GOYscript $VERSION by GOYfilms"
+echo -e $grisC
+echo "Modo de uso: $0 [interfaz] [opciones]"
+echo
+echo "OPCIONES:"
+echo "    -l, -L :Usar la lista de redes detectadas la última vez"
+echo "    -wep   :Buscar sólo redes con encriptación WEP"
+echo "    -wpa   :Buscar sólo redes con encriptación WPA"
+echo "    -wps   :Buscar sólo redes con WPS activado"
+echo
+echo "Ejemplos: $0"
+echo "          $0 wlan1"
+echo "          $0 wlan0 -l"
+echo "          $0 -L"
+echo "          $0 -wpa"
+echo "          $0 wlan0 -wps"
+echo -e "$grisC"
+exit 1
+}
+
+#COMPRUEBA SI HAY INTERFACES EN MODO MONITOR Y, SI LAS HAY, LAS DESACTIVA
+desactivar_todos_monX()
+{
+INTERFACES_MONITOR=`iwconfig --version | grep "Recommend" | awk '{print $1}' | grep mon`
+let CUANTAS=`echo $INTERFACES_MONITOR | wc -w`
+let CONT=1
+while [ $CONT -le $CUANTAS ]
+do
+	MON=`echo $INTERFACES_MONITOR | awk '{print $'$CONT'}'`
+	$AIRMON stop $MON > /dev/null 2>&1
+	let CONT=$CONT+1
+done
+}
+
+#DETIENE POSIBLES PROCESOS EN MARCHA
+matar_procesos()
+{
+echo -e "$cyan""\n$1"
+echo -e "$grisC"
+PROCESOS=$(ps $PARAMETRO_PS | egrep -a -n '(xterm|ifconfig|dhcpcd|dhclient|NetworkManager|networkmanager|wpa_supplicant|airbase-ng|wicd|wicd-client)' | grep -v grep)
+while [ "$PROCESOS" != "" ]
+do
+	killall -q xterm ifconfig dhcpcd dhclient NetworkManager networkmanager wpa_supplicant airbase-ng wicd wicd-client >/dev/null 2>&1
+	PROCESOS=$(ps $PARAMETRO_PS | egrep -a '(xterm|ifconfig|dhcpcd|dhclient|NetworkManager|networkmanager|wpa_supplicant|airbase-ng|wicd|wicd-client)' | grep -v grep)
+done
+desactivar_todos_monX
+}
+
+#NOMBRE Y VERSIÓN DEL SCRIPT
+version()
+{
+SCRIPT=" GOYscript $VERSION by GOYfilms "
+N_SCRIPT=${#SCRIPT}
+N_VERSION=${#VERSION}
+let CARACTERES=$N_SCRIPT*3
+LINEA=`echo "══════════════════════════════════════════" | cut -c-${CARACTERES}`
+clear
+echo -e "$blanco\c"
+echo -e "╔${LINEA}╗"
+echo -e "║${SCRIPT}║"
+echo -e "╚${LINEA}╝"
+echo -e $grisC
+}
+
+comprobar_distribucion()
+{
+DISTRIBUCION=$(./software/./distro_linux.sh)
+case "$DISTRIBUCION" in
+"<Desconocida>")
+	echo -e $rojoC"Distribución de Linux desconocida$grisC"
+	echo -e $grisC;;
+*)
+	echo -e $verdeC"Distribución de linux detectada: $blanco$DISTRIBUCION"
+	echo -e $grisC;;
+esac
+}
+
+#ESPERA A QUE SE PULSE UNA TECLA
+pulsar_una_tecla()
+{
+echo
+echo -e $blanco"$1"$grisC" \c"
+read -n 1 TECLA
+echo
+echo
+if [ "$1" = "Pulsa una tecla para salir..." ]
+then
+	exit 1
+fi
+}
+
+#SELECCIÓN DE LA TARJETA WiFi
+seleccionar_tarjeta()
+{
+TARJETAS_WIFI_DISPONIBLES=`iwconfig --version | grep "Recommend" | awk '{print $1}' | sort`
+N_TARJETAS_WIFI=`echo $TARJETAS_WIFI_DISPONIBLES | awk '{print NF}'`
+if [ "$TARJETAS_WIFI_DISPONIBLES" = "" ]
+then
+	echo -e ""$rojoC"ERROR: No se detectó ninguna tarjeta WiFi"
+	echo -e "$grisC"
+	pulsar_una_tecla "Pulsa una tecla para salir..."
+else
+	echo -e ""$cyan"Tarjetas WiFi disponibles:"$grisC""
+	echo
+	x=1
+	while [ $x -le $N_TARJETAS_WIFI ]
+	do
+		INTERFAZ=`echo $TARJETAS_WIFI_DISPONIBLES | awk '{print $'$x'}'`
+		DRIVER=`ls -l /sys/class/net/$INTERFAZ/device/driver | sed 's/^.*\/\([a-zA-Z0-9_-]*\)$/\1/'`
+		MAC=`ifconfig "$INTERFAZ" | grep -oE '([[:xdigit:]]{1,2}:){5}[[:xdigit:]]{1,2}' | awk '{print toupper($0)}' | cut -c-8` #extraemos la MAC XX:XX:XX (sólo los 3 primeros pares)
+		if [ "$MAC" = "" ] #si la interfaz esta en modo monitor el procedimiento para extraer la MAC es distinto
+		then
+	        	MAC=`ifconfig "$INTERFAZ" | grep "HWaddr" | awk -F 'HWaddr ' '{print $2}' | cut -c-17 | sed 's/-/:/g'`
+        	fi
+        	FABRICANTE_INTERFAZ=`$FABRICANTE "$MAC"`
+		if [ $x -eq 1 ]
+		then
+			echo -e ""$cyan" Nº\tINTERFAZ\tDRIVER\t\tFABRICANTE"
+			echo -e ""$cyan" ══\t════════\t══════\t\t══════════"
+		fi
+		CARACTERES_DRIVER=`echo $DRIVER | wc -c` 
+		if [ $CARACTERES_DRIVER -gt 8 ] #CONTROLA LA TABULACIÓN DEPENDIENDO DE LOS CARACTERES QUE TENGA LA VARIABLE "DRIVER"
+		then
+			TAB=""
+		else
+			TAB="\t"
+		fi
+		echo -e ""$amarillo" $x)\t$INTERFAZ \t\t$DRIVER\t"$TAB"$FABRICANTE_INTERFAZ"
+		x=$((x+1))
+	done
+	if [ $N_TARJETAS_WIFI -gt 1 ] # SI DETECTA MAS DE UNA NOS PREGUNTA CUAL QUEREMOS
+	then
+		echo -e "\n"$cyan"\nSelecciona una tarjeta WiFi:\033[K\c"
+		echo -e ""$amarillo" \c"
+		read -n 1 OPCION
+		while [[ $OPCION < 1 ]] || [[ $OPCION > $N_TARJETAS_WIFI ]]
+		do
+			echo -en "\a\033[10C"$rojoC"OPCIÓN NO VÁLIDA"$grisC"    "
+			sleep 1
+			echo -en ""$cyan"\rSelecciona una tarjeta WiFi: "$amarillo"\033[K\c"
+			read -n 1 OPCION
+		done
+	else
+		OPCION=1
+	fi
+fi
+if [ $N_TARJETAS_WIFI -gt 1 ] # SI DETECTA MÁS DE UNA VARÍA EL MENSAJE
+then
+	INTERFAZ=`echo $TARJETAS_WIFI_DISPONIBLES | awk '{print $'$OPCION'}'`
+	MAC=`ifconfig "$INTERFAZ" | grep -oE '([[:xdigit:]]{1,2}:){5}[[:xdigit:]]{1,2}' | awk '{print toupper($0)}' | cut -c-8` #extraemos la MAC XX:XX:XX (sólo los 3 primeros pares)
+	FABRICANTE_INTERFAZ=`$FABRICANTE "$MAC"`
+	echo -e "\n"
+	echo -e ""$cyan"Has seleccionado: "$verdeC"$INTERFAZ $grisC[$FABRICANTE_INTERFAZ]"
+	echo
+else
+	echo
+	echo -e ""$cyan"Sólo se ha detectado una tarjeta WiFi: "$verdeC"$INTERFAZ"$grisC"\033[K"
+	echo
+fi
+}
+
+#MUESTRA LA RESOLUCIÓN DE PANTALLA ACTUAL
+mostrar_resolucion_de_pantalla()
+{
+#CALCULAMOS LA RESOLUCION DE LA PANTALLA. DEPENDIENDO DE LA VERSION DE "xrandr" SE RECORTA DE UNA FORMA U OTRA
+which xdpyinfo > /dev/null 2>&1
+if [ $? -eq 0 ]
+then
+	RESOLUCION=`xdpyinfo | grep -A 3 "screen #0" | grep dimensions | tr -s " " | cut -d" " -f 3`
+else
+	which xrandr > /dev/null 2>&1
+	if [ $? -eq 0 ]
+	then
+ 		RESOLUCION=`xrandr | grep "*" | awk '{print $1}'`
+ 		RESOLUCION=`echo $RESOLUCION | grep "x"`
+		if [ "$RESOLUCION" = "" ]
+		then
+			RESOLUCION=`xrandr | grep "current" | awk -F "current" '{print $2}' | awk -F " " '{print $1$2$3}' | awk -F "," '{print $1}'`
+			RESOLUCION=`echo $RESOLUCION | grep "x"`
+		fi
+		if [ "$RESOLUCION" = "" ]
+		then
+			RESOLUCION=`xrandr | grep "*" | awk '{print $2$3$4}'`
+			RESOLUCION=`echo $RESOLUCION | grep "x"`
+		fi
+	else
+		which Xvesa > /dev/null 2>&1
+		if [ $? -eq 0 ]
+		then
+			RESOLUCION=`Xvesa -listmodes 2>&1 | grep ^0x | awk '{ printf "%s %s\n",$2,$3 }' | sort -n | grep x[1-2][4-6] | tail -n 1 | awk -F 'x' '{print $1"x"$2}'`
+		else
+			RESOLUCION=""
+		fi
+	fi
+fi
+case $RESOLUCION in
+	1920x1080)
+		FUENTE="-fn 9x15bold"
+		BUSCAR_REDES_VENTANA="-geometry 105x100-0+0"
+		AIRODUMP_VENTANA="-geometry 100x18-0-0"
+		CLIENTE_VENTANA="-geometry 100x5-0+0"
+		AIRCRACK_VENTANA="-geometry 80x25-0+0";;
+	1280x1024)
+		FUENTE="-fs 8"
+		AIRODUMP_VENTANA="-geometry 100x31-0-0"
+		CLIENTE_VENTANA="-geometry 100x3-0+0"
+		AIRCRACK_VENTANA="-geometry 80x25-0-0";;
+	1280x800)
+		FUENTE="-fs 8"
+		AIRODUMP_VENTANA="-geometry 100x14-0-0"
+		CLIENTE_VENTANA="-geometry 100x3-0+0"
+		AIRCRACK_VENTANA="-geometry 80x25-0-0";;
+	1024x600)
+		FUENTE="-fs 8"
+		BUSCAR_REDES_VENTANA="-geometry 100x100-0+0"
+		AIRODUMP_VENTANA="-geometry 90x11-0-0"
+		CLIENTE_VENTANA="-geometry 90x2-0+0"
+		AIRCRACK_VENTANA="-geometry 70x23-0-0";;
+	"")
+		RESOLUCION=""$rojoC"[no detectada]";;
+esac
+
+case $TERM in #EN DISTRIBUCIONES COMO BEINI, LOS PARAMETROS DE LA CONSOLA SON DISTINTOS
+	rxvt)
+		parpadeoON=""
+		NORMAL="+sb -fg black -bg white"
+		INFORMA="+sb -fg black -bg yellow"
+		MAL="+sb -fg black -bg red"
+		BIEN="+sb -fg black -bg green"
+		FUENTE=""
+		BUSCAR_REDES_VENTANA="-geometry 100x59-0+0"
+		AIRODUMP_VENTANA="-geometry 100x18-0-0"
+		CLIENTE_VENTANA="-geometry 100x2-0+0"
+		AIRCRACK_VENTANA="-geometry 70x23-0-0";;
+esac
+echo -e ""$cyan"Resolución de pantalla actual: "$verdeC"$RESOLUCION"$grisC""
+echo
+}
+
+#INICIALIZACIÓN DE LA TARJETA
+iniciar_tarjeta()
+{
+echo -e ""$cyan"Iniciando la tarjeta WiFi..."$grisC""
+echo
+ifconfig $INTERFAZ down
+ifconfig $INTERFAZ up
+iwconfig $INTERFAZ rate 1M
+}
+
+#ACTIVA EL MODO MONITOR DE LA INTERFAZ
+activar_modo_monitor()
+{
+software/./reiniciar_interfaz.sh $INTERFAZ
+MAC_INTERFAZ=`ifconfig "$INTERFAZ" | grep -oE '([[:xdigit:]]{1,2}:){5}[[:xdigit:]]{1,2}' | awk '{print toupper($0)}'` #extraemos la MAC de la interfaz del comando 'ifconfig'
+if [ "$MAC_INTERFAZ" = "" ] #si la interfaz esta en modo monitor el procedimiento para extraer la MAC es distinto
+then
+	MAC_INTERFAZ=`ifconfig "$INTERFAZ" | grep "HWaddr" | awk -F 'HWaddr ' '{print $2}' | cut -c-17 | sed 's/-/:/g'`
+fi
+echo -e ""$cyan"Activando modo monitor en $blanco$INTERFAZ $grisC("$MAC_INTERFAZ")$cyanC..."$grisC""
+$AIRMON start $INTERFAZ 2>/dev/null
+ifconfig mon0 > /dev/null 2>&1
+if [ $? = 0 ] #si el comando anterior se realizó correctamente es porque existe la interfaz "mon0"
+then
+	INTERFAZ_MONITOR=mon0
+else
+	INTERFAZ_MONITOR=$INTERFAZ
+fi
+}
+
+#PREGUNTA SI SE DESEAN INTRODUCIR LOS DATOS QUE FALTAN DE UNA RED OCULTA
+red_oculta()
+{
+echo -e $rojoC
+echo -e " Has seleccionado una red oculta."
+echo -e " Faltan algunos datos antes de poder continuar."
+echo -e $grisC
+echo -en $cyanC"¿Deseas introducir manualmente los datos que faltan? [S/N]:$amarillo \033[K"
+read -n 1 OPCION
+OPCION=`echo "$OPCION" | awk '{print toupper($0)}'`
+while [ "$OPCION" != "S" ] && [ "$OPCION" != "N" ]
+do
+	echo -en $cyanC"\r¿Deseas introducir manualmente los datos que faltan? [S/N]:$amarillo \033[K"
+	read -n 1 OPCION
+	OPCION=`echo "$OPCION" | awk '{print toupper($0)}'`
+done
+if [ "$OPCION" = "S" ]
+then
+	echo -e $cyanC"\r¿Deseas introducir manualmente los datos que faltan? [S/N]:$amarillo SÍ\033[K"
+	introducir_datos_red_oculta
+else
+	echo -e $cyanC"\r¿Deseas introducir manualmente los datos que faltan? [S/N]:$amarillo NO\033[K"
+	echo -e $grisC
+	descubrir_red_oculta
+fi
+}
+
+#PARA INTRODUCIR MANUALMENTE LOS DATOS QUE FALTAN DE UNA RED OCULTA
+introducir_datos_red_oculta()
+{
+echo -e $grisC
+while [[ "$CANAL" = "-" ]] || [[ $CANAL -lt 1 ]] || [[ $CANAL -gt 13 ]] #si el canal no es válido lo introducimos nosotros
+do
+	echo -en $cyanC"\r  Introduce el CANAL:$amarillo \033[K"
+	read CANAL
+	echo -en "\033[1A"
+done
+echo -e $grisC
+while [ "$NOMBRE_AP" = "" ]
+do
+	echo -en $cyanC"\r  Introduce el ESSID:$amarillo \033[K"
+	read NOMBRE_AP
+	echo -en "\033[1A"
+done
+echo -e $grisC
+while [ "$TIPO" != "WEP" ] && [ "$TIPO" != "WPA" ] && [ "$TIPO" != "WPA2" ]
+do
+	echo -en $cyanC"\r  Introduce el TIPO:$amarillo \033[K"
+	read TIPO
+	TIPO=`echo "$TIPO" | awk '{print toupper($0)}'`
+	CIFRADO="$TIPO"
+	echo -en "\033[1A"
+done
+echo -e $grisC
+}
+
+#DESCUBRE LOS DATOS QUE FALTAN DE UNA RED OCULTA
+descubrir_red_oculta()
+{
+rm -rf "$CAPTURA"/red_oculta* > /dev/null 2>&1
+if [ "$CANAL" = "-" ] || [ $CANAL -lt 1 ] || [ $CANAL -gt 13 ] #SI EL CANAL NO ES VÁLIDO, SE BUSCA EL CANAL CORRECTO.
+then
+	echo -e $cyan"\r   Buscando CANAL... "$grisC" \c"
+	if [ "$INTERFAZ_GRAFICA" = "SI" ]
+	then
+		xterm $DEBUG -bg white -fg black $AIRODUMP_VENTANA -title "Buscando el canal de $MAC_AP" -e $AIRODUMP --bssid $MAC_AP -w "$CAPTURA/red_oculta_canal" $INTERFAZ_MONITOR &
+	else
+		$SCREEN -t "Buscando CANAL" $AIRODUMP --bssid $MAC_AP -w "$CAPTURA/red_oculta_canal" $INTERFAZ_MONITOR
+	fi
+	CANAL=""
+	AIRODUMP_FUNCIONANDO=`ps $PARAMETRO_PS | grep airodump | grep -v grep`
+	while [ "$AIRODUMP_FUNCIONANDO" = "" ]
+	do
+		AIRODUMP_FUNCIONANDO=`ps $PARAMETRO_PS | grep airodump | grep -v grep`
+	done
+	while [[ "$CANAL" = "" ]] || [[ $CANAL -gt 13 ]] || [[ $CANAL -lt 1 ]]
+	do
+		if [ -e "$CAPTURA/red_oculta_canal-01.csv" ]
+		then
+			CANAL=`cat $CAPTURA/red_oculta_canal-01.csv | head -n 3 | tail -n 1 | awk -F ',' '{print $4}' | sed 's/ //g'`
+			NOMBRE_AP=`cat $CAPTURA/red_oculta_canal-01.csv | head -n 3 | tail -n 1 | awk -F ',' '{print $14}' | sed "s/^.\(.*\)/\1/"`
+		fi
+		AIRODUMP_FUNCIONANDO=`ps $PARAMETRO_PS | grep airodump | grep -v grep`
+		if [ "$AIRODUMP_FUNCIONANDO" = "" ]
+		then
+			break
+		fi
+	done
+	if [[ $CANAL -ge 1 ]] && [[ $CANAL -le 13 ]]
+	then
+		echo -e $verdeC"Encontrado: $blanco$CANAL"
+		echo -e $grisC
+		if [ "$NOMBRE_AP" != "" ]
+		then
+			echo -e $cyan"\r   Buscando NOMBRE DE RED...$verdeC Encontrado: $blanco\"$NOMBRE_AP\""
+			echo -e $grisC
+		fi
+	fi
+	killall -w airodump-ng > /dev/null 2>&1
+fi
+if [[ $CANAL -ge 1 ]] && [[ $CANAL -le 13 ]] && [[ "$NOMBRE_AP" = "" ]]
+then
+	echo -e $cyan"\r   Buscando NOMBRE DE RED... "$grisC" \c"
+	if [ "$NOMBRE_AP" = "" ]
+	then
+		if [ "$INTERFAZ_GRAFICA" = "SI" ]
+		then
+			xterm $DEBUG -bg white -fg black $AIRODUMP_VENTANA -title "Buscando el nombre de red de $MAC_AP" -e $AIRODUMP --bssid $MAC_AP -c $CANAL,$CANAL -w "$CAPTURA/red_oculta_nombre" $INTERFAZ_MONITOR &
+		else
+			$SCREEN -t "Buscando ESSID" -n ${TERMINAL}2 $AIRODUMP --bssid $MAC_AP -c $CANAL,$CANAL -w "$CAPTURA/red_oculta_nombre" $INTERFAZ_MONITOR &
+		fi
+		NOMBRE_AP=""
+		CLIENTE=""
+		AIRODUMP_FUNCIONANDO=`ps $PARAMETRO_PS | grep airodump | grep -v grep`
+		while [ "$AIRODUMP_FUNCIONANDO" = "" ]
+		do
+			AIRODUMP_FUNCIONANDO=`ps $PARAMETRO_PS | grep airodump | grep -v grep`
+		done
+		while [ "$NOMBRE_AP" = "" ] #BUSCAMOS EL NOMBRE DE LA RED
+		do
+			if [ -e "$CAPTURA/red_oculta_nombre-01.csv" ]
+			then
+				NOMBRE_AP=`cat $CAPTURA/red_oculta_nombre-01.csv | head -n 3 | tail -n 1 | awk -F ',' '{print $14}' | sed "s/^.\(.*\)/\1/"`
+				CLIENTE=`cat $CAPTURA/red_oculta_nombre-01.csv | tail -n 2 | head -n 1 | awk -F ',' '{print $1}'`
+				if [ "$NOMBRE_AP" != "" ]
+				then
+					break
+				fi
+				SLEEP=`ps $PARAMETRO_PS | grep sleep | grep -v grep`
+				if [ "$CLIENTE" != "" ] && [ "$SLEEP" = "" ] #SI HAY UN CLIENTE CONECTADO LO EXPULSAMOS PARA CONSEGUIR EL NOMBRE AL RECONECTARSE
+				then
+					if [ "$INTERFAZ_GRAFICA" = "SI" ]
+					then
+						xterm $DEBUG -bg white -fg green $FUENTE $CLIENTE_VENTANA -title "ATAQUE -0 [Expulsando al cliente del AP]" -e $AIREPLAY -0 1 -a $MAC_AP -c $CLIENTE $INTERFAZ_MONITOR
+					else
+						$SCREEN -t "Expulsando cliente" -n ${TERMINAL}3 $AIREPLAY -0 1 -a $MAC_AP -c $CLIENTE $INTERFAZ_MONITOR
+					fi
+					CLIENTE=""
+					sleep 5 &
+				fi
+			fi
+			AIRODUMP_FUNCIONANDO=`ps $PARAMETRO_PS | grep airodump | grep -v grep`
+			if [ "$AIRODUMP_FUNCIONANDO" = "" ]
+			then
+				break
+			fi
+		done
+	fi
+	if [ "$NOMBRE_AP" != "" ] && [[ "$NOMBRE_AP" != '< Oculta >' ]]
+	then
+		echo -e $verdeC"Encontrado: $blanco\"$NOMBRE_AP\""
+		echo -e $grisC
+	fi
+	killall airodump-ng aireplay-ng > /dev/null 2>&1
+fi
+}
+
+#BÚSQUEDA DE REDES
+buscar_redes()
+{
+rm -rf $CAPTURA/wifis* > /dev/null 2>&1
+rm -rf $CAPTURA/listado* > /dev/null 2>&1
+echo -e "$cyan$parpadeoON"
+echo -e "╔════════════════════════════════╗"
+echo -e "║                                ║"
+echo -e "║$parpadeoOFF "$cyan" PULSA CONTROL+C PARA DETENER  $parpadeoON║"
+echo -e "║$parpadeoOFF "$cyan" LA  BÚSQUEDA  Y  SELECCIONAR  $parpadeoON║"
+echo -e "║$parpadeoOFF "$cyan" UNA DE LAS REDES DETECTADAS   $parpadeoON║"
+echo -e "║                                ║"
+echo -e "╚════════════════════════════════╝"
+echo -e "$parpadeoOFF""$grisC"
+if [ "$BUSCAR_WPS" != "" ]
+then
+	PARAMETRO="WPS"
+else
+	PARAMETRO=""
+fi
+if [ "$INTERFAZ_GRAFICA" = "NO" ]
+then
+	$SCREEN -t "Buscando_redes" $MOSTRAR_REDES_DETECTADAS $PARAMETRO
+fi
+if [ "$BUSCAR_WEP" != "" ] #busca redes con airodump
+then
+	echo -e $verdeC"Buscando redes con encriptación ${blanco}WEP${verdeC}..."
+	if [ "$INTERFAZ_GRAFICA" = "SI" ]
+	then
+		xterm $DEBUG -iconic -e $AIRODUMP --encrypt WEP -w ./$CAPTURA/wifis $INTERFAZ_MONITOR &
+	else
+		$AIRODUMP --encrypt WEP -w ./$CAPTURA/wifis $INTERFAZ_MONITOR >/dev/null 2>&1 &
+	fi
+else
+	if [ "$BUSCAR_WPA" != "" ]
+	then
+		echo -e $verdeC"Buscando redes con encriptación ${blanco}WPA${verdeC}..."
+		if [ "$INTERFAZ_GRAFICA" = "SI" ]
+		then
+			xterm $DEBUG -iconic -e $AIRODUMP --encrypt WPA -w ./$CAPTURA/wifis $INTERFAZ_MONITOR &
+		else
+			$AIRODUMP --encrypt WPA -w ./$CAPTURA/wifis $INTERFAZ_MONITOR >/dev/null 2>&1 &
+		fi
+	else
+		if [ "$BUSCAR_WPS" != "" ]
+		then
+			echo -e $verdeC"Buscando redes con ${blanco}WPS${verdeC} activado..."
+			if [ "$INTERFAZ_GRAFICA" = "SI" ]
+			then
+				xterm $DEBUG -iconic -e $AIRODUMP --encrypt WEP --encrypt WPA -w ./$CAPTURA/wifis $INTERFAZ_MONITOR &
+			else
+				$AIRODUMP --encrypt WEP --encrypt WPA -w ./$CAPTURA/wifis $INTERFAZ_MONITOR >/dev/null 2>&1 &
+			fi
+		else
+			if [ "$INTERFAZ_GRAFICA" = "SI" ]
+			then
+				xterm $DEBUG -iconic -e $AIRODUMP --encrypt WEP --encrypt WPA -w ./$CAPTURA/wifis $INTERFAZ_MONITOR &
+			else
+				$AIRODUMP --encrypt WEP --encrypt WPA -w ./$CAPTURA/wifis $INTERFAZ_MONITOR >/dev/null 2>&1 &
+			fi
+		fi
+	fi
+fi
+if [ "$INTERFAZ_GRAFICA" = "SI" ] #busca redes WPS con wash
+then
+	xterm $DEBUG -iconic -e $WASH -i $INTERFAZ_MONITOR -C -o "$CAPTURA/listado-wps.lst" > /dev/null 2>&1 &
+else
+	$SCREEN -dm -t "wash" $WASH -i $INTERFAZ_MONITOR -C -o "$CAPTURA/listado-wps.lst" >/dev/null 2>&1
+fi
+while [ ! -f "$CAPTURA/wifis-01.csv" ] #ESPERA A QUE SE GENERE EL ARCHIVO PARA CONTINUAR
+do
+	sleep 1
+done
+if [ "$INTERFAZ_GRAFICA" = "SI" ]
+then
+	xterm $DEBUG -bg black -fg white -geometry 100x100-0+0 -title "BUSCANDO REDES WiFi" -e $MOSTRAR_REDES_DETECTADAS $PARAMETRO
+else
+	BUSCANDO=`ps $PARAMETRO_PS | grep "goyscript_redes" | grep -v grep`
+	while [ "$BUSCANDO" != "" ]
+	do
+		BUSCANDO=`ps $PARAMETRO_PS | grep "goyscript_redes" | grep -v grep`
+	done
+fi
+killall airodump-ng wash > /dev/null 2>&1
+}
+
+insertar_numero_en_listado()
+{
+rm -rf "$CAPTURA/listado-FINAL-FORMATEADO.lst" >/dev/null 2>&1
+let NUMERO=1
+while IFS=, read COLOR HAY_CLIENTE BSSID CANAL IV POTENCIA SUS TIPO ES_WPS COLOR2 MARCA COLOR ESSID
+do
+	printf "$COLOR  %3s)%1s  %17s    %2s   %2s   %3s  %1s%-4s  %2s$COLOR2%1s$COLOR  $ESSID\033[K\n" "$NUMERO" "$HAY_CLIENTE" "$BSSID" "$CANAL" "$IV" "$POTENCIA" "$SUS" "$TIPO" "$ES_WPS" "$MARCA">> "$CAPTURA/listado-FINAL-FORMATEADO.lst"
+	let NUMERO=$NUMERO+1
+done < "$CAPTURA/listado-FINAL-ORDENADO.csv"
+}
+
+#SELECCIÓN DE LA RED A ATACAR
+seleccionar_red()
+{
+insertar_numero_en_listado
+clear
+echo
+echo -e $cyanC"    Nº          MAC         CANAL  IV  SEÑAL  TIPO  WPS  NOMBRE DE RED"
+echo -e $cyanC"    ══   ═════════════════  ═════  ══  ═════  ════  ═══  ═════════════"
+cat "$CAPTURA/listado-FINAL-FORMATEADO.lst"
+echo
+let NUMERO=`cat "$CAPTURA/listado-FINAL-FORMATEADO.lst" | wc -l`
+if [ $NUMERO -eq 1 ] #SI SÓLO SE HA DETECTADO UNA RED YA NO NOS DÁ A ESCOGER ;-D
+then
+	SELECCION=1
+else
+	echo -e ""$cyan"\rSelecciona una red de la lista: "$amarillo"\c"
+	read SELECCION
+fi
+while [[ $SELECCION -lt 1 ]] || [[ $SELECCION -gt $NUMERO ]]
+do
+	echo -en "\a\033[1A\033[40C"$rojoC"OPCIÓN NO VÁLIDA  "$grisC""
+	sleep 1
+	echo -en "\a\r"$cyan"Selecciona una red de la lista: \033[K"$amarillo"\c"
+	read SELECCION
+done
+NOMBRE_AP=`sed -n ${SELECCION}p "$CAPTURA/listado-FINAL-ORDENADO.csv" | awk -F ',' '{print $13}'`
+MAC_AP=`sed -n ${SELECCION}p "$CAPTURA/listado-FINAL-ORDENADO.csv" | awk -F ',' '{print $3}'`
+CANAL=`sed -n ${SELECCION}p "$CAPTURA/listado-FINAL-ORDENADO.csv" | awk -F ',' '{print $4}' | sed 's/ //g'`
+TIPO=`sed -n ${SELECCION}p "$CAPTURA/listado-FINAL-ORDENADO.csv" | awk -F ',' '{print $8}' | sed 's/ //g'`
+ES_WPS=`sed -n ${SELECCION}p "$CAPTURA/listado-FINAL-ORDENADO.csv" | awk -F ',' '{print $9}' | sed 's/ //g'`
+CIFRADO=`grep -a "$MAC_AP" "$CAPTURA/wifis-01.csv"| sed -n 1p | awk -F ',' '{print $7}' | sed 's/ //g' | cut -c-4`
+CIFRADO=$TIPO-$CIFRADO
+MAC_GUIONES=`echo $MAC_AP | sed 's/:/-/g'`
+if [ "$NOMBRE_AP" = "< Oculta >" ]
+then
+	NOMBRE_AP=""
+	red_oculta
+fi
+}
+
+crear_carpetas()
+{
+mkdir -p "$CAPTURA" > /dev/null 2>&1
+mkdir -p "$CLAVES" > /dev/null 2>&1
+mkdir -p "$HANDSHAKES" > /dev/null 2>&1
+mkdir -p "$WEP" > /dev/null 2>&1
+mkdir -p "$WPA" > /dev/null 2>&1
+mkdir -p "$WPS/sesiones" > /dev/null 2>&1
+mkdir -p "$TMP" > /dev/null 2>&1
+rm -rf $CAPTURA/red_oculta* > /dev/null 2>&1
+rm -rf $TMP/replay_*.cap > /dev/null 2>&1
+}
+
+#MUESTRA LOS DATOS CON LOS QUE SE VA A TRABAJAR
+mostrar_resumen()
+{
+if [ "$FABRICANTE_INTERFAZ" = "" ]
+then
+	FABRICANTE_INTERFAZ=`$FABRICANTE "$MAC_INTERFAZ"`
+fi
+FABRICANTE_AP=`$FABRICANTE "$MAC_AP"`
+if [ "$ES_WPS" = "SI" ]
+then
+	WPS_SI_O_NO="(WPS activado)"
+else
+	WPS_SI_O_NO=""
+fi
+case "$TIPO" in
+"WEP")
+	CIFRADO="WEP";;
+"-")
+	CIFRADO="???";;
+esac
+echo -e "$amarillo"
+echo -e "R E S U M E N"
+echo -e "═════════════"
+echo
+echo -e "  "$subrayar"INTERFAZ"$parpadeoOFF""$amarillo":"
+echo -e "    Nombre..........: $INTERFAZ"
+echo -e "    Modo monitor....: $INTERFAZ_MONITOR"
+echo -e "    MAC.............: $MAC_INTERFAZ"
+echo -e "    Fabricante......: $FABRICANTE_INTERFAZ"
+echo
+echo -e "  "$subrayar"PUNTO DE ACCESO"$parpadeoOFF""$amarillo":"
+echo -e "    Nombre..........: $NOMBRE_AP"
+echo -e "    MAC.............: $MAC_AP"
+echo -e "    Canal...........: $CANAL"
+echo -e "    Encriptación....: $CIFRADO $WPS_SI_O_NO"
+echo -e "    Fabricante......: $FABRICANTE_AP"
+echo -e "$grisC"
+}
+
+#SI SE TRATA DE UNA RED CON WPS ACTIVADO NOS PREGUNTA SI QUEREMOS USAR goyscriptWPA o goyscriptWPS
+seleccionar_metodo()
+{
+if [ "$ES_WPS" = "SI" ]
+then
+	if [ "$BUSCAR_WPS" = "" ] && [ "$BUSCAR_WPA" = "" ] #sólo pregunta el método si no hemos filtrado por WPA o WPS la búsqueda de redes
+	then
+		echo
+		echo -e $cyanC"Has seleccionado una red con WPS activado."
+		echo
+		echo -e $cyanC"¿Qué método deseas para la auditoría?"
+		echo
+		if [ "$TIPO" = "WPA" ] || [ "$TIPO" = "WPA2" ]
+		then
+			echo -e $verdeC"  1) goyscriptWPA"
+		else
+			if [ "$TIPO" = "WEP" ]
+			then
+				echo -e $verdeC"  1) goyscriptWEP"
+			fi
+		fi
+		echo -e $verdeC"  2) goyscriptWPS"
+		echo
+		echo -en $cyanC"  Selecciona un método:$amarillo \c"
+		read -n 1 OPCION
+		while [[ $OPCION -lt 1 ]] || [[ $OPCION -gt 2 ]]
+		do
+			echo -en $cyanC"\r  Selecciona un método:$amarillo\033[K \c"
+			read -n 1 OPCION
+		done
+		if [ $OPCION -eq 1 ]
+		then
+			if [ "$TIPO" = "WPA" ] || [ "$TIPO" = "WPA2" ]
+			then
+				echo -en $blanco"   (goyscriptWPA)"
+				METODO="goyscriptWPA"
+			else
+				if [ "$TIPO" = "WEP" ]
+				then
+					echo -en $blanco"   (goyscriptWEP)"
+					METODO="goyscriptWEP"
+				fi
+			fi
+		else
+			echo -en $blanco"   (goyscriptWPS)"
+			METODO="goyscriptWPS"
+		fi
+		echo -e $grisC
+	else
+		if [ "$BUSCAR_WPA" = "" ]
+		then
+			METODO="goyscriptWPS"
+		else
+			METODO="goyscriptWPA"
+		fi
+	fi
+else
+	if [ "$TIPO" = "WPA" ] || [ "$TIPO" = "WPA2" ]
+	then
+		METODO="goyscriptWPA"
+	else
+		if [ "$TIPO" = "WEP" ]
+		then
+			METODO="goyscriptWEP"
+		fi
+	fi
+fi
+}
+
+#EJECUTA EL SCRIPT QUE CORRESPONDA DEPENDIENDO DEL TIPO DE ENCRIPTACIÓN
+ejecutar_script_correspondiente()
+{
+case $METODO in
+	goyscriptWEP|goyscriptWPS)
+		./$METODO --datos "$MAC_AP" "$NOMBRE_AP" "$CANAL" "$INTERFAZ";;
+	goyscriptWPA)
+		./$METODO --datos "$MAC_AP" "$NOMBRE_AP" "$CANAL" "$CIFRADO" "$INTERFAZ";;
+	*)
+		echo -e $rojoC"ERROR INESPERADO"
+		sleep 5
+		exit 1;;
+esac
+}
+
+#ACTUALIZA LOS COLORES DEL LISTADO DE REDES
+actualizar_listado_de_redes()
+{
+echo -e $cyanC"\rActualizando el listado..."
+echo -e $grisC
+mv "$CAPTURA/listado-FINAL-ORDENADO.csv" "$CAPTURA/listado-FINAL-ORDENADO.old" #cambiamos el nombre para poder guardar la actualización con el nombre original
+while IFS=, read COLOR HAY_CLIENTE MAC CANAL IV POTENCIA SUS TIPO ES_WPS COLOR2 MARCA COLOR NOMBRE
+do
+	MAC_GUIONES=`echo $MAC | sed 's/:/-/g'`
+	EXISTE_CLAVE=`find "$CLAVES" | grep "$NOMBRE ($MAC_GUIONES).txt"`
+	EXISTE_HANDSHAKE=`find "$HANDSHAKES" | grep "$NOMBRE ($MAC_GUIONES).cap"`
+	EXISTE_SESION=`find "$WPS" | grep "$ESSID ($MAC_GUIONES)".wps`
+	ES_ROJO=`echo "$COLOR" | grep "31m"`
+	if [ "$EXISTE_CLAVE" != "" ]
+	then
+		COLOR="$magentaC"
+	else
+		if [ "$ES_ROJO" != "" ] #si está de color rojo es porque el AP tiene bloqueado el WPS
+		then
+			COLOR="$rojoC"
+		else
+			if [ "$EXISTE_HANDSHAKE" != "" ] || [ "$EXISTE_SESION" != "" ]
+			then
+				COLOR="$marron"
+			else
+				COLOR="$blanco"
+			fi
+		fi
+	fi
+	if [ "$NOMBRE" = "< Oculta >" ]
+	then
+		COLOR="$rojoC"
+	fi
+	echo -e "$COLOR,$HAY_CLIENTE,$MAC,$CANAL,$IV,$POTENCIA,$SUS,$TIPO,$ES_WPS,$COLOR2,$MARCA,$COLOR,$NOMBRE" >> "$CAPTURA/listado-FINAL-ORDENADO.csv"
+done < "$CAPTURA/listado-FINAL-ORDENADO.old"
+rm -rf "$CAPTURA/listado-FINAL-ORDENADO.old" > /dev/null 2>&1
+}
+
+comprobar_permisos_solo_lectura()
+{
+rm -rf "prueba_permisos" > /dev/null 2>&1
+mkdir "prueba_permisos" > /dev/null 2>&1
+if [ $? -ne 0 ]
+then
+	echo -e $grisC
+	echo -e $rojoC"  ERROR: El dispositivo está montado como sólo lectura"
+	echo -e $cyanC"         Prueba a volver a montarlo con:"
+	echo -e $cyanC"         mount -o remount,rw <punto_de_montaje>"
+	echo -e $grisC
+	echo -e $cyanC"         Ejemplo:"
+	echo -e $cyanC"             mount -o remount,rw /mnt/sdb1"
+	echo -e $grisC
+	pulsar_una_tecla "Pulsa una tecla para salir..."
+else
+	rm -rf "prueba_permisos" > /dev/null 2>&1
+fi
+}
+
+comprobar_root()
+{
+USUARIO=`whoami`
+if [ "$USUARIO" != "root" ]
+then
+	echo -e $grisC
+	echo -e $rojoC"ERROR: Necesitas permisos de root para poder"
+	echo -e $rojoC"       ejecutar este script"
+	echo -e $grisC
+	pulsar_una_tecla "Pulsa una tecla para salir..."
+fi
+}
+
+
+##### PROGRAMA PRINCIPAL #####
+
+version
+
+comprobar_permisos_solo_lectura
+if [ "$DISTRO" != "OpenWrt" ]
+then
+	comprobar_root
+fi
+INTERFAZ_GRAFICA=`ps $PARAMETRO_PS | grep -e goyscriptTTY -e goyscriptWRT | grep -v grep`
+if [ "$INTERFAZ_GRAFICA" = "" ]
+then
+	INTERFAZ_GRAFICA="SI"
+else
+	INTERFAZ_GRAFICA="NO"
+fi
+PARAMETROS="$*"
+BUSCAR_WEP=`echo "$PARAMETROS" | grep -w -e "-wep"`
+BUSCAR_WPA=`echo "$PARAMETROS" | grep -w -e "-wpa"`
+BUSCAR_WPS=`echo "$PARAMETROS" | grep -w -e "-wps"`
+
+crear_carpetas
+
+if [ "$1" == "--help" ] || [ "$1" == "--ayuda" ] || [ "$1" == "/?" ]
+then
+	comprobar_ayuda
+fi
+
+matar_procesos " Iniciando..."
+
+if [ "$DISTRO" != "OpenWrt" ]
+then
+	REST=`ps $PARAMETRO_PS | grep "restaurar_" | grep -v grep`
+	while [ "$REST" != "" ] #espera a que termine el script de restaurar los servicios (por si se ejecuta la suite dos veces muy seguidas)
+	do
+		REST=`ps $PARAMETRO_PS | grep "restaurar_" | grep -v grep`
+	done
+fi
+
+version
+
+comprobar_distribucion
+
+if [[ -e "/sys/class/net/$1/device/driver" ]]  #Para controlar si existe la interfaz pasada como parámetro.
+then                                           #Si no existe, muestra las que hay para que seleccionemos una
+	INTERFAZ=$1
+else
+	seleccionar_tarjeta
+fi
+
+if [ "$INTERFAZ_GRAFICA" = "SI" ] && [ "$DISTRO" != "OpenWrt"  ]
+then
+	mostrar_resolucion_de_pantalla
+fi
+
+iniciar_tarjeta
+
+if [ "$DISTRO" != "OpenWrt" ]
+then
+	nohup software/./restaurar_servicios.sh $$ >/dev/null 2>&1 & #inicia en segundo plano el script para restaurar los servicios al finalizar goyscript
+fi
+
+activar_modo_monitor
+
+LISTA=`echo "$*" | grep -w -e "-l" -e "-L"` #para controlar si se usó el parámetro indicado
+if [ "$LISTA" != "" ] && [ -e "$CAPTURA/listado-FINAL-ORDENADO.csv" ]
+then
+	echo -e $cyanC"Se usará la lista de redes detectadas anteriormente."$grisC
+	echo
+	actualizar_listado_de_redes
+else
+	buscar_redes
+fi
+
+while true
+do
+	INTERFACES_MONITOR=`iwconfig --version | grep "Recommend" | awk '{print $1}' | grep mon`
+	if [ "$INTERFACES_MONITOR" = "" ] #se activa el modo monitor si se desactivó previamente para conectarse a internet
+	then
+		echo -e $grisC
+		activar_modo_monitor
+	fi
+	if [ -f "$CAPTURA/listado-FINAL-FORMATEADO.lst" ]
+	then
+		seleccionar_red
+		if [[ $CANAL -ge 1 ]] && [[ $CANAL -le 13 ]] && [[ "$NOMBRE_AP" != "" ]] #comprueba que los datos son correctos para continuar
+		then
+			seleccionar_metodo
+			mostrar_resumen
+			ejecutar_script_correspondiente
+		fi
+		actualizar_listado_de_redes
+	else
+		echo -e $grisC
+		echo -e $rojoC"No se ha encontrado ninguna red."
+		echo -e $grisC
+		pulsar_una_tecla "Pulsa una tecla para reiniciar el script..."
+		unset
+		sh $0 $*
+	fi
+done

