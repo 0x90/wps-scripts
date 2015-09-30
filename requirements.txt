@@ -1,0 +1,41 @@
+PyBluez==0.21
+PyYAML==3.11
+argh==0.26.1
+colorama==0.3.3
+dnet==1.12
+docopt==0.6.2
+dpkt==1.8.6
+impacket==0.9.12
+iwlib==1.5
+libnl==0.2.0
+netaddr==0.7.14
+netlink==1.0
+pathtools==0.1.2
+pcapy==0.10.8
+prettytable==0.7.2
+-e git+https://github.com/arend/py80211@4f6ef735d96bddc24a0090af8876bb20a84fb3ff#egg=py80211-master
+pycparser==2.10
+pyroute2==0.3.6
+-e git+https://github.com/pingflood/pythonwifi.git@2d20c4f0d057833d5b851280ed2133b0b82bf69c#egg=python_wifi-master
+scapy==2.3.1
+terminaltables==1.1.1
+watchdog==0.8.3
+wireless==0.3.0
+wireless-radar==0.2.1
+wsgiref==0.1.2
+colorama==0.3.3
+colorclass==1.2.0
+docopt==0.6.2
+dpkt==1.8.6
+impacket==0.9.12
+libnl==0.2.0
+netlink==1.0
+pbkdf2==1.3
+prettytable==0.7.2
+-e git+https://github.com/arend/py80211@4f6ef735d96bddc24a0090af8876bb20a84fb3ff#egg=py80211-master
+python-wifi==0.6.0
+scapy==2.3.1
+terminaltables==1.1.1
+wifi==0.3.4
+wireless==0.3.0
+wsgiref==0.1.2

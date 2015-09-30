@@ -1,0 +1,11 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/git-commands/git-subrepo#readme
+;
+[subrepo]
+	remote = https://github.com/jgilhutton/pyxiewps
+	branch = master
+	commit = 8b88820ff471ecfb641e7237e5646bdc5b7673c7
+	parent = 598a7494754041a787fb14855b71b3d51475c07a
+	cmdver = 0.2.1
