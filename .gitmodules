@@ -1,3 +1,6 @@
 [submodule "HT-WPS-Breaker"]
 	path = HT-WPS-Breaker
 	url = https://github.com/SilentGhostX/HT-WPS-Breaker
+[submodule "Wps-Ultimate-Cracker"]
+	path = Wps-Ultimate-Cracker
+	url = https://github.com/younextvictim/Wps-Ultimate-Cracker
