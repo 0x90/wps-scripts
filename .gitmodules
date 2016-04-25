@@ -7,3 +7,12 @@
 [submodule "penetrator-wps"]
 	path = penetrator-wps
 	url = https://github.com/xXx-stalin-666-money-xXx/penetrator-wps.git
+[submodule "FrankenScript"]
+	path = FrankenScript
+	url = https://github.com/wi-fi-analyzer/FrankenScript
+[submodule "reset-wps"]
+	path = reset-wps
+	url = https://github.com/wi-fi-analyzer/reset-wps
+[submodule "wpspin2"]
+	path = wpspin2
+	url = https://github.com/wi-fi-analyzer/wpspin
