@@ -16,3 +16,30 @@
 [submodule "wpspin2"]
 	path = wpspin2
 	url = https://github.com/wi-fi-analyzer/wpspin
+[submodule "reaverscript"]
+	path = reaverscript
+	url = https://github.com/natas72716/reaverscript
+[submodule "SmartReaver"]
+	path = SmartReaver
+	url = https://github.com/technopwnsauce/SmartReaver
+[submodule "Reaver_script"]
+	path = Reaver_script
+	url = https://github.com/alexsalvetti/Reaver_script
+[submodule "reaver_reattempt"]
+	path = reaver_reattempt
+	url = https://github.com/kurobeats/reaver_reattempt
+[submodule "Reaver-Wrapper"]
+	path = Reaver-Wrapper
+	url = https://github.com/eye9poob/Reaver-Wrapper
+[submodule "auto-reaver"]
+	path = auto-reaver
+	url = https://github.com/DominikStyp/auto-reaver
+[submodule "reaver-wps-fork-t6x"]
+	path = reaver-wps-fork-t6x
+	url = https://github.com/t6x/reaver-wps-fork-t6x
+[submodule "pixiewps"]
+	path = pixiewps
+	url = https://github.com/wiire/pixiewps
+[submodule "reaver-wps-mac-changer"]
+	path = reaver-wps-mac-changer
+	url = https://github.com/gabrielrcouto/reaver-wps
