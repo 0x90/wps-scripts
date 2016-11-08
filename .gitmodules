@@ -43,3 +43,18 @@
 [submodule "reaver-wps-mac-changer"]
 	path = reaver-wps-mac-changer
 	url = https://github.com/gabrielrcouto/reaver-wps
+[submodule "wps_guesser"]
+	path = wps_guesser
+	url = https://github.com/Nurdilin/wps_guesser
+[submodule "pyxiewps_WPShack-Python"]
+	path = pyxiewps_WPShack-Python
+	url = https://github.com/jgilhutton/pyxiewps_WPShack-Python
+[submodule "wifiAutoWPS"]
+	path = wifiAutoWPS
+	url = https://github.com/arnaucode/wifiAutoWPS
+[submodule "wps-dict"]
+	path = wps-dict
+	url = https://github.com/luskaner/wps-dict
+[submodule "WPS-Pins"]
+	path = WPS-Pins
+	url = https://github.com/uciha-ayush/WPS-Pins
