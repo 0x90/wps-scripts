@@ -97,3 +97,9 @@
 [submodule "wps-pwn"]
 	path = wps-pwn
 	url = https://github.com/technopwnsauce/wps-pwn
+[submodule "VMR-MDK-Kali2-Kali2016"]
+	path = VMR-MDK-Kali2-Kali2016
+	url = https://github.com/musket33/VMR-MDK-Kali2-Kali2016
+[submodule "wifitick"]
+	path = wifitick
+	url = https://github.com/nu11secur1ty/wifitick.git
