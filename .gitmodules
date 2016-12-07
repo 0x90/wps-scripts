@@ -58,3 +58,42 @@
 [submodule "WPS-Pins"]
 	path = WPS-Pins
 	url = https://github.com/uciha-ayush/WPS-Pins
+[submodule "AutoPixieWps"]
+	path = AutoPixieWps
+	url = https://github.com/nxxxu/AutoPixieWps
+[submodule "WPSmash"]
+	path = WPSmash
+	url = https://github.com/DanMcInerney/WPSmash
+[submodule "bully"]
+	path = bully
+	url = https://github.com/aanarchyy/bully
+[submodule "Varmascan-reaver"]
+	path = Varmascan-reaver
+	url = https://github.com/L33T-H4X0R-D00D/Varmascan-reaver
+[submodule "WPSPinGenerator-GUI"]
+	path = WPSPinGenerator-GUI
+	url = https://github.com/SergiObiols/WPSPinGenerator-GUI
+[submodule "wpspinattacker"]
+	path = wpspinattacker
+	url = https://github.com/lawrenceamer/wpspinattacker
+[submodule "wpscracker"]
+	path = wpscracker
+	url = https://github.com/MrHassan1/wpscracker
+[submodule "wpscrack"]
+	path = wpscrack
+	url = https://github.com/ml31415/wpscrack
+[submodule "WPS-SLAUGHTER"]
+	path = WPS-SLAUGHTER
+	url = https://github.com/ApatheticEuphoria/WPS-SLAUGHTER
+[submodule "wps"]
+	path = wps
+	url = https://github.com/lanyuan27/wps
+[submodule "pyReaver"]
+	path = pyReaver
+	url = https://github.com/byt3bl33d3r/pyReaver
+[submodule "varmacscan"]
+	path = varmacscan
+	url = https://github.com/musket33/varmacscan
+[submodule "wps-pwn"]
+	path = wps-pwn
+	url = https://github.com/technopwnsauce/wps-pwn
