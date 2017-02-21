@@ -112,3 +112,6 @@
 [submodule "greaver"]
 	path = greaver
 	url = https://github.com/sigginet/greaver
+[submodule "Pwnstar9-0-for-Kali-2016R1-2"]
+	path = Pwnstar9-0-for-Kali-2016R1-2
+	url = https://github.com/musket33/Pwnstar9-0-for-Kali-2016R1-2
