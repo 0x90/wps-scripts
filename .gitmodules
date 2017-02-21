@@ -55,9 +55,6 @@
 [submodule "wps-dict"]
 	path = wps-dict
 	url = https://github.com/luskaner/wps-dict
-[submodule "WPS-Pins"]
-	path = WPS-Pins
-	url = https://github.com/uciha-ayush/WPS-Pins
 [submodule "AutoPixieWps"]
 	path = AutoPixieWps
 	url = https://github.com/nxxxu/AutoPixieWps
@@ -82,9 +79,6 @@
 [submodule "wpscrack"]
 	path = wpscrack
 	url = https://github.com/ml31415/wpscrack
-[submodule "WPS-SLAUGHTER"]
-	path = WPS-SLAUGHTER
-	url = https://github.com/ApatheticEuphoria/WPS-SLAUGHTER
 [submodule "wps"]
 	path = wps
 	url = https://github.com/lanyuan27/wps
