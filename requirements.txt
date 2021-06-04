@@ -1,5 +1,5 @@
 PyBluez==0.21
-PyYAML==3.11
+PyYAML==5.4
 argh==0.26.1
 colorama==0.3.3
 dnet==1.12
